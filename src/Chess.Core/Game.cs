@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 
 namespace Chess.Core
 {
@@ -19,6 +20,7 @@ namespace Chess.Core
     {
         private readonly List<Position> _positions = new List<Position>();
         private readonly List<Move> _moves = new List<Move>();
+        private readonly List<string> _san = new List<string>();
         private readonly Dictionary<string, int> _repetitions = new Dictionary<string, int>();
         private List<Move> _legalMoves;
 
@@ -37,6 +39,9 @@ namespace Chess.Core
         public Position Current => _positions[_positions.Count - 1];
         public IReadOnlyList<Position> Positions => _positions;
         public IReadOnlyList<Move> Moves => _moves;
+
+        /// <summary>The moves so far in short algebraic notation, e.g. "e4", "Nf3", "O-O".</summary>
+        public IReadOnlyList<string> SanMoves => _san;
         public IReadOnlyList<Move> LegalMoves => _legalMoves;
         public GameStatus Status { get; private set; }
         public bool IsOver => Status != GameStatus.Ongoing;
@@ -76,6 +81,7 @@ namespace Chess.Core
                 throw new InvalidOperationException($"Illegal move {move} in {Current.ToFen()}.");
 
             var next = Current.Apply(move);
+            _san.Add(Notation.ToSan(Current, move));
             _moves.Add(move);
             _positions.Add(next);
             string key = next.PlacementKey();
@@ -99,9 +105,63 @@ namespace Chess.Core
             if (--_repetitions[key] == 0)
                 _repetitions.Remove(key);
             _moves.RemoveAt(_moves.Count - 1);
+            _san.RemoveAt(_san.Count - 1);
             _positions.RemoveAt(_positions.Count - 1);
             _legalMoves = MoveGenerator.GenerateLegal(Current);
             Status = ComputeStatus();
+        }
+
+        /// <summary>The moves in a given language, e.g. Russian "Кf3" instead of "Nf3".</summary>
+        public List<string> MovesIn(NotationLanguage language)
+        {
+            var result = new List<string>(_moves.Count);
+            for (int i = 0; i < _moves.Count; i++)
+                result.Add(Notation.ToSan(_positions[i], _moves[i], language));
+            return result;
+        }
+
+        /// <summary>
+        /// The game as PGN text that chess sites and programs can open. A game that did not
+        /// start from the standard position records its start in the FEN tag.
+        /// </summary>
+        public string ToPgn(string white = "?", string black = "?", string date = "????.??.??")
+        {
+            var start = _positions[0];
+            string result = Status switch
+            {
+                GameStatus.Ongoing => "*",
+                GameStatus.Checkmate => Winner == PieceColor.White ? "1-0" : "0-1",
+                _ => "1/2-1/2",
+            };
+
+            var sb = new StringBuilder();
+            sb.Append("[Event \"Casual game\"]\n");
+            sb.Append($"[Date \"{date}\"]\n");
+            sb.Append($"[White \"{white}\"]\n");
+            sb.Append($"[Black \"{black}\"]\n");
+            sb.Append($"[Result \"{result}\"]\n");
+            if (start.ToFen() != Position.StartFen)
+            {
+                sb.Append("[SetUp \"1\"]\n");
+                sb.Append($"[FEN \"{start.ToFen()}\"]\n");
+            }
+            sb.Append('\n');
+
+            int moveNumber = start.FullmoveNumber;
+            bool whiteToMove = start.SideToMove == PieceColor.White;
+            for (int i = 0; i < _san.Count; i++)
+            {
+                if (whiteToMove)
+                    sb.Append(moveNumber).Append(". ");
+                else if (i == 0)
+                    sb.Append(moveNumber).Append("... ");
+                sb.Append(_san[i]).Append(' ');
+                if (!whiteToMove)
+                    moveNumber++;
+                whiteToMove = !whiteToMove;
+            }
+            sb.Append(result);
+            return sb.ToString();
         }
 
         private GameStatus ComputeStatus()
