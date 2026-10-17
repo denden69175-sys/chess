@@ -90,15 +90,25 @@ namespace Chess.Core
         /// Picks a move for the side to move. Safe to call from a background thread;
         /// returns null when there are no legal moves.
         /// </summary>
-        public Move? ChooseMove(Position position, CancellationToken cancellation = default)
+        public Move? ChooseMove(Position position, CancellationToken cancellation = default) =>
+            ChooseMoveWithScore(position, cancellation).Move;
+
+        /// <summary>
+        /// The chosen move and its score in centipawns for the side to move (higher is better).
+        /// The time-travel bot compares this score with the scores of its jumps.
+        /// </summary>
+        public (Move? Move, int Score) ChooseMoveWithScore(Position position, CancellationToken cancellation = default)
         {
             var moves = Ordered(position, MoveGenerator.GenerateLegal(position));
             if (moves.Count == 0)
-                return null;
+                return (null, position.IsInCheck(position.SideToMove) ? -MateScore : 0);
 
             // The easy bot sometimes just plays a random move so a beginner can win.
             if (Level == BotLevel.Easy && _random.NextDouble() < 0.3)
-                return moves[_random.Next(moves.Count)];
+            {
+                var randomMove = moves[_random.Next(moves.Count)];
+                return (randomMove, ScoreAfter(position.Apply(randomMove), cancellation));
+            }
 
             int best = -MateScore - 1;
             var bestMoves = new List<Move>();
@@ -121,8 +131,46 @@ namespace Chess.Core
             }
 
             // Several equally good moves: pick one at random so games do not repeat.
-            return bestMoves[_random.Next(bestMoves.Count)];
+            return (bestMoves[_random.Next(bestMoves.Count)], best);
         }
+
+        /// <summary>
+        /// How good <paramref name="after"/> is for the player who just moved into it, searched to
+        /// the bot's depth. Lets callers score actions that are not ordinary moves.
+        /// </summary>
+        public int ScoreAfter(Position after, CancellationToken cancellation = default) =>
+            -Search(after, Depth - 1, -MateScore - 1, MateScore + 1, 1, cancellation);
+
+        /// <summary>
+        /// Picks a move or a jump in the time-travel mode and returns it as text
+        /// ("e2e4" or "jump:e4:2"), or null when there is nothing to play.
+        /// A jump is chosen only when it is clearly better than the best ordinary move.
+        /// </summary>
+        public string? ChooseTimeTravelAction(TimeTravelChoice choice, CancellationToken cancellation = default)
+        {
+            var (move, moveScore) = ChooseMoveWithScore(choice.Current, cancellation);
+            string? best = move?.ToUci();
+            int bestScore = move.HasValue ? moveScore + JumpMargin : int.MinValue;
+
+            // The easy bot never time-travels: the mode is hard enough to follow already.
+            if (Level == BotLevel.Easy)
+                return best;
+
+            foreach (var (jump, result) in choice.Jumps)
+            {
+                cancellation.ThrowIfCancellationRequested();
+                int score = ScoreAfter(result, cancellation);
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    best = jump.ToString();
+                }
+            }
+            return best;
+        }
+
+        // Jumps are rare (two per game), so the bot keeps one for a real gain.
+        private const int JumpMargin = 150;
 
         private int Search(Position position, int depth, int alpha, int beta, int ply, CancellationToken cancellation)
         {

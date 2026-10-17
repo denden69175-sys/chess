@@ -96,5 +96,20 @@ namespace Chess.Core.Tests
             game.MakeMove("e2e4");
             Assert.Equal(PieceColor.Black, game.Current.SideToMove);
         }
+
+        [Fact]
+        public void CodeRoundTrips()
+        {
+            string code = Army.Classic.ToCode();
+            Assert.Equal(code, Army.FromCode(code)!.ToCode());
+            Assert.Null(Army.FromCode("Ke1,Xz9"));
+        }
+
+        [Fact]
+        public void AllPresetsAreValid()
+        {
+            foreach (var (name, army) in Army.Presets)
+                Assert.True(army.IsValid, name + ": " + string.Join(", ", army.Validate()));
+        }
     }
 }

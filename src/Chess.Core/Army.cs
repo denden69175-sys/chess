@@ -63,6 +63,54 @@ namespace Chess.Core
             [Square.Parse("h2")] = PieceType.Pawn,
         });
 
+        /// <summary>
+        /// Short text form, e.g. "Ke1,Qd1,Pe2", used to save armies and send them to the server.
+        /// Squares are always given from White's side.
+        /// </summary>
+        public string ToCode()
+        {
+            var parts = new List<string>();
+            foreach (var pair in _pieces.OrderBy(p => p.Key.Index))
+                parts.Add(new Piece(pair.Value, PieceColor.White).Symbol + pair.Key.ToString());
+            return string.Join(",", parts);
+        }
+
+        /// <summary>Reads <see cref="ToCode"/> output; returns null for malformed text.</summary>
+        public static Army? FromCode(string? code)
+        {
+            if (code == null)
+                return null;
+            var pieces = new Dictionary<Square, PieceType>();
+            foreach (var part in code.Split(new[] { ',' }, System.StringSplitOptions.RemoveEmptyEntries))
+            {
+                string item = part.Trim();
+                if (item.Length != 3)
+                    return null;
+                try
+                {
+                    var type = Piece.FromSymbol(char.ToUpperInvariant(item[0])).Type;
+                    var square = Square.Parse(item.Substring(1));
+                    if (pieces.ContainsKey(square))
+                        return null;
+                    pieces[square] = type;
+                }
+                catch (System.FormatException)
+                {
+                    return null;
+                }
+            }
+            return new Army(pieces);
+        }
+
+        /// <summary>Ready-made armies to start from in the army editor. All fit the budget.</summary>
+        public static IReadOnlyList<(string Name, Army Army)> Presets => new List<(string, Army)>
+        {
+            ("Классика", Classic),
+            ("Четыре ферзя", FromCode("Qa1,Qb1,Ke1,Qg1,Qh1,Pd2,Pe2,Pf2")!),
+            ("Конница", FromCode("Na1,Nb1,Nc1,Nd1,Ke1,Nf1,Ng1,Nh1,Pa2,Pb2,Nc2,Nd2,Ne2,Nf2,Pg2,Ph2")!),
+            ("Ладейный вал", FromCode("Ra1,Rb1,Rc1,Rd1,Ke1,Rf1,Rg1,Rh1,Pc2,Pd2,Pe2,Pf2")!),
+        };
+
         public List<ArmyError> Validate()
         {
             var errors = new List<ArmyError>();
