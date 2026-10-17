@@ -1,0 +1,6 @@
+build/
+unity/
+tests/
+**/bin/
+**/obj/
+.git/
