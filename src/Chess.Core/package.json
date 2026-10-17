@@ -1,0 +1,7 @@
+{
+  "name": "com.chessapp.core",
+  "version": "0.1.0",
+  "displayName": "Chess Core",
+  "description": "Chess rules, custom armies and a bot. Shared by the Unity client and the server.",
+  "unity": "2022.3"
+}

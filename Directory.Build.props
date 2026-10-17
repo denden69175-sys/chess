@@ -1,0 +1,11 @@
+<Project>
+  <!--
+    Build output goes to build/ at the repo root instead of bin/ and obj/ next to the sources.
+    src/Chess.Core is also a Unity package, and Unity would otherwise try to compile the
+    generated .cs files that MSBuild puts in obj/.
+  -->
+  <PropertyGroup>
+    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)build/obj/$(MSBuildProjectName)/</BaseIntermediateOutputPath>
+    <BaseOutputPath>$(MSBuildThisFileDirectory)build/bin/$(MSBuildProjectName)/</BaseOutputPath>
+  </PropertyGroup>
+</Project>
