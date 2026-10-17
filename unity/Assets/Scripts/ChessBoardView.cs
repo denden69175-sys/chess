@@ -2,48 +2,55 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Chess.Core;
 using UnityEngine;
 using Random = UnityEngine.Random;
 
-public enum GameMode
+public enum Opponent
 {
-    VsBot,
-    TwoPlayers,
+    Bot,
+    SameDevice,
+    Online,
 }
 
 /// <summary>
-/// The start menu, the board, the move list and the bot's replies.
+/// The whole app: menu screens, the board, the move list, the bot, time travel and online play.
 /// Everything is built from code, so the game starts in any scene, including an empty one.
+/// The screens are in ChessBoardView.Menu.cs, the in-game interface in ChessBoardView.Hud.cs and
+/// online play in ChessBoardView.Online.cs.
 /// </summary>
-public class ChessBoardView : MonoBehaviour
+public partial class ChessBoardView : MonoBehaviour
 {
-    private static readonly Color LightSquare = new Color32(240, 217, 181, 255);
-    private static readonly Color DarkSquare = new Color32(181, 136, 99, 255);
+    private static readonly Color LightSquare = new Color32(238, 216, 182, 255);
+    private static readonly Color DarkSquare = new Color32(178, 132, 96, 255);
     private static readonly Color LastMoveTint = new Color32(205, 210, 106, 150);
     private static readonly Color SelectedTint = new Color32(130, 151, 105, 170);
     private static readonly Color CheckTint = new Color32(220, 60, 60, 170);
+    private static readonly Color JumpTint = new Color32(160, 100, 255, 150);
     private static readonly Color TargetDot = new Color32(20, 85, 30, 110);
-    private static readonly Color Background = new Color32(48, 46, 43, 255);
+    private static readonly Color GameBackground = new Color32(22, 18, 48, 255);
 
     // World units above the board kept free for the buttons and the status line.
     private const float TopPanel = 1.6f;
 
-    // World units right of the board for the move list, when the screen is wide enough.
-    private const float SidePanel = 4.6f;
+    // World units right of the board for the side panel, when the screen is wide enough.
+    private const float SidePanel = 4.8f;
 
-    private const float BoardHalf = 4.2f;
+    // Half the height the board needs, with its frame and the letters on it.
+    private const float BoardHalf = 4.6f;
 
     // The bot waits at least this long before moving, so its reply does not look instant.
     private const float BotMinDelay = 0.7f;
     private const float BotMaxDelay = 1.6f;
 
-    private static readonly string[] LevelNames = { "Лёгкий", "Средний", "Сложный" };
-    private static readonly string[] ColorNames = { "Белые", "Чёрные", "Случайно" };
+    private const float MoveAnimation = 0.18f;
 
     private readonly Dictionary<string, Sprite> _pieceSprites = new Dictionary<string, Sprite>();
+    private readonly Dictionary<string, Texture2D> _pieceTextures = new Dictionary<string, Texture2D>();
+    private readonly List<Texture2D> _floatingPieces = new List<Texture2D>();
     private readonly SpriteRenderer[] _overlays = new SpriteRenderer[64];
     private readonly SpriteRenderer[] _dots = new SpriteRenderer[64];
     private readonly Dictionary<int, SpriteRenderer> _pieces = new Dictionary<int, SpriteRenderer>();
@@ -53,29 +60,62 @@ public class ChessBoardView : MonoBehaviour
     private Sprite _dotSprite = null!;
     private Transform _root = null!;
 
-    private bool _inMenu = true;
-    private GameMode _mode = GameMode.VsBot;
-    private int _menuColor;
+    // Settings of the current or next game.
+    private Opponent _opponent = Opponent.Bot;
+    private bool _timeTravel;
+    private Army? _whiteArmy;
+    private Army? _blackArmy;
+    private string _botArmyName = "";
     private BotLevel _level = BotLevel.Medium;
+    private int _menuColor;
 
-    private Game _game = new Game();
+    private TimeTravelGame _game = new TimeTravelGame();
     private PieceColor _human = PieceColor.White;
+
+    /// <summary>What to highlight for each action played so far, in order.</summary>
+    private readonly List<Mark> _marks = new List<Mark>();
 
     private Square? _selected;
     private SpriteRenderer? _dragged;
     private bool _dragging;
 
-    private Task<Move?>? _botTask;
+    // Time travel: choosing a piece to send back, then the board it lands on.
+    private bool _jumpMode;
+    private Square? _jumpPiece;
+
+    // Promotion: the move waits for the player to pick a piece.
+    private Square? _promotionFrom;
+    private Square? _promotionTo;
+
+    private Task<string?>? _botTask;
     private CancellationTokenSource? _botCancel;
     private float _botReadyAt;
 
-    private List<string> _russianMoves = new List<string>();
-    private Game? _russianMovesGame;
-    private int _russianMovesCount = -1;
+    private SpriteRenderer? _animated;
+    private Vector3 _animateFrom;
+    private Vector3 _animateTo;
+    private float _animateStart;
+    private bool _animatePop;
 
-    private Vector2 _moveListScroll;
-    private int _shownMoveCount;
-    private string _notice = "";
+    private bool _endShown;
+    private bool _endHidden;
+    private float _endAt;
+
+    private float _jumpFlashAt = -100;
+
+    private readonly struct Mark
+    {
+        public Mark(Square from, Square to, bool jump)
+        {
+            From = from;
+            To = to;
+            Jump = jump;
+        }
+
+        public Square From { get; }
+        public Square To { get; }
+        public bool Jump { get; }
+    }
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void CreateIfMissing()
@@ -92,9 +132,11 @@ public class ChessBoardView : MonoBehaviour
             var cameraObject = new GameObject("Main Camera") { tag = "MainCamera" };
             _camera = cameraObject.AddComponent<Camera>();
         }
+        if (FindObjectOfType<AudioListener>() == null)
+            _camera.gameObject.AddComponent<AudioListener>();
         _camera.orthographic = true;
         _camera.clearFlags = CameraClearFlags.SolidColor;
-        _camera.backgroundColor = Background;
+        _camera.backgroundColor = GameBackground;
 
         _root = new GameObject("Board Root").transform;
         _root.SetParent(transform, false);
@@ -103,10 +145,15 @@ public class ChessBoardView : MonoBehaviour
         _dotSprite = MakeDotSprite(64);
         LoadPieceSprites();
         BuildBoard();
-        ShowMenu();
+        LoadMenuSettings();
+        ShowPage(Page.Home);
     }
 
-    private void OnDestroy() => _botCancel?.Cancel();
+    private void OnDestroy()
+    {
+        _botCancel?.Cancel();
+        _net?.Dispose();
+    }
 
     // ---------------------------------------------------------------- setup
 
@@ -135,6 +182,25 @@ public class ChessBoardView : MonoBehaviour
         return Sprite.Create(texture, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), size);
     }
 
+    /// <summary>A white rounded square that can be stretched without bending its corners.</summary>
+    private static Sprite MakeRoundedSprite(int size, int radius)
+    {
+        var texture = new Texture2D(size, size, TextureFormat.RGBA32, false) { filterMode = FilterMode.Bilinear };
+        for (int y = 0; y < size; y++)
+        {
+            for (int x = 0; x < size; x++)
+            {
+                float dx = Mathf.Max(radius - (x + 0.5f), (x + 0.5f) - (size - radius), 0);
+                float dy = Mathf.Max(radius - (y + 0.5f), (y + 0.5f) - (size - radius), 0);
+                float alpha = Mathf.Clamp01(radius - Mathf.Sqrt(dx * dx + dy * dy) + 0.5f);
+                texture.SetPixel(x, y, new Color(1, 1, 1, alpha));
+            }
+        }
+        texture.Apply();
+        return Sprite.Create(texture, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), size, 0,
+            SpriteMeshType.FullRect, new Vector4(radius, radius, radius, radius));
+    }
+
     private void LoadPieceSprites()
     {
         foreach (var color in new[] { "w", "b" })
@@ -150,12 +216,35 @@ public class ChessBoardView : MonoBehaviour
                 texture.filterMode = FilterMode.Bilinear;
                 var rect = new Rect(0, 0, texture.width, texture.height);
                 _pieceSprites[color + type] = Sprite.Create(texture, rect, new Vector2(0.5f, 0.5f), texture.width);
+                _pieceTextures[color + type] = texture;
+                _floatingPieces.Add(texture);
             }
         }
     }
 
+    private static string PieceKey(Piece piece) =>
+        (piece.Color == PieceColor.White ? "w" : "b") + char.ToUpperInvariant(piece.Symbol);
+
+    private Texture2D? PieceTexture(PieceType type, PieceColor color)
+    {
+        _pieceTextures.TryGetValue(PieceKey(new Piece(type, color)), out var texture);
+        return texture;
+    }
+
     private void BuildBoard()
     {
+        var rounded = MakeRoundedSprite(64, 16);
+        var shadow = NewSprite("Board Shadow", _root, rounded, -3);
+        shadow.drawMode = SpriteDrawMode.Sliced;
+        shadow.size = new Vector2(8.9f, 8.9f);
+        shadow.color = new Color(0, 0, 0, 0.45f);
+        shadow.transform.localPosition = new Vector3(0.06f, -0.14f, 0);
+
+        var frame = NewSprite("Board Frame", _root, rounded, -2);
+        frame.drawMode = SpriteDrawMode.Sliced;
+        frame.size = new Vector2(8.7f, 8.7f);
+        frame.color = new Color32(92, 60, 40, 255);
+
         var board = new GameObject("Board").transform;
         board.SetParent(_root, false);
         for (int i = 0; i < 64; i++)
@@ -185,68 +274,211 @@ public class ChessBoardView : MonoBehaviour
 
     // ---------------------------------------------------------------- game flow
 
-    private void ShowMenu()
+    /// <summary>Starts a game with the current settings (<see cref="_opponent"/>, armies, time travel).</summary>
+    private void StartGame()
     {
         CancelBot();
-        _inMenu = true;
-        _root.gameObject.SetActive(false);
-    }
-
-    private void StartGame(GameMode mode)
-    {
-        CancelBot();
-        _mode = mode;
-        _human = mode == GameMode.TwoPlayers || _menuColor == 0 ? PieceColor.White
-            : _menuColor == 1 ? PieceColor.Black
-            : (Random.value < 0.5f ? PieceColor.White : PieceColor.Black);
-        _game = new Game();
+        var start = _whiteArmy != null || _blackArmy != null
+            ? Army.ToPosition(_whiteArmy ?? Army.Classic, _blackArmy ?? Army.Classic)
+            : Position.Start;
+        _game = new TimeTravelGame(start);
+        _marks.Clear();
         _selected = null;
+        _jumpMode = false;
+        _jumpPiece = null;
+        _promotionFrom = null;
+        _promotionTo = null;
+        _endShown = false;
+        _endHidden = false;
+        _onlineEnded = false;
+        _waitingForServer = false;
         _notice = "";
         _moveListScroll = Vector2.zero;
-        _inMenu = false;
         _root.gameObject.SetActive(true);
+        ShowPage(Page.Game);
         PlaceBoardTiles();
         Redraw();
+        Sfx.Play(Sfx.Start);
         MaybeStartBot();
+    }
+
+    /// <summary>The colour the player gets against the bot, from the menu choice.</summary>
+    private PieceColor ChosenColor() =>
+        _menuColor == 0 ? PieceColor.White
+        : _menuColor == 1 ? PieceColor.Black
+        : (Random.value < 0.5f ? PieceColor.White : PieceColor.Black);
+
+    private void StartBotGame(bool timeTravel, Army? playerArmy)
+    {
+        _opponent = Opponent.Bot;
+        _timeTravel = timeTravel;
+        _human = ChosenColor();
+        if (playerArmy != null)
+        {
+            // The bot fights with one of the ready-made armies.
+            var presets = Army.Presets;
+            var pick = presets[Random.Range(0, presets.Count)];
+            _botArmyName = pick.Name;
+            _whiteArmy = _human == PieceColor.White ? playerArmy : pick.Army;
+            _blackArmy = _human == PieceColor.Black ? playerArmy : pick.Army;
+        }
+        else
+        {
+            _botArmyName = "";
+            _whiteArmy = null;
+            _blackArmy = null;
+        }
+        StartGame();
+    }
+
+    private void StartSameDeviceGame(bool timeTravel)
+    {
+        _opponent = Opponent.SameDevice;
+        _timeTravel = timeTravel;
+        _human = PieceColor.White;
+        _whiteArmy = null;
+        _blackArmy = null;
+        StartGame();
+    }
+
+    private void Rematch()
+    {
+        if (_opponent == Opponent.Bot)
+            StartBotGame(_timeTravel, _botArmyName.Length > 0 ? PlayerArmy() : null);
+        else
+            StartGame();
     }
 
     /// <summary>Whose pieces the person at the screen may move right now.</summary>
     private bool PlayerMayMove =>
-        !_game.IsOver && !BotThinking && (_mode == GameMode.TwoPlayers || _game.Current.SideToMove == _human);
+        _page == Page.Game && !_game.IsOver && !BotThinking && !_waitingForServer && !_onlineEnded
+        && _promotionFrom == null && _jumpPiece == null
+        && (_opponent == Opponent.SameDevice || _game.Current.SideToMove == _human);
+
+    private bool CanUndo => _opponent != Opponent.Online && _game.ActionCount > 0;
 
     private void Undo()
     {
         CancelBot();
-        if (_game.Moves.Count > 0)
-            _game.Undo();
+        UndoOne();
         // Against the bot, also take back its reply so it is the player's turn again.
-        if (_mode == GameMode.VsBot && _game.Current.SideToMove != _human && _game.Moves.Count > 0)
-            _game.Undo();
+        if (_opponent == Opponent.Bot && _game.Current.SideToMove != _human && _game.ActionCount > 0)
+            UndoOne();
         _selected = null;
+        _jumpMode = false;
         _notice = "";
+        _endShown = false;
+        _endHidden = false;
         Redraw();
         MaybeStartBot();
     }
 
-    private void PlayMove(Move move)
+    private void UndoOne()
     {
+        if (_game.ActionCount == 0)
+            return;
+        _game.Undo();
+        _marks.RemoveAt(_marks.Count - 1);
+    }
+
+    /// <summary>The player chose a move on the board. Online, the server confirms it first.</summary>
+    private void PlayerMove(Move move)
+    {
+        if (_opponent == Opponent.Online)
+        {
+            SendAction(move.ToUci());
+            _selected = null;
+            RedrawHighlights();
+            return;
+        }
+        Apply(move);
+    }
+
+    private void PlayerJump(TimeJump jump)
+    {
+        _jumpPiece = null;
+        if (_opponent == Opponent.Online)
+        {
+            _jumpMode = false;
+            SendAction(jump.ToString());
+            RedrawHighlights();
+            return;
+        }
+        Apply(jump);
+    }
+
+    private void Apply(Move move)
+    {
+        bool capture = _game.Current[move.To].HasValue || move.Kind == MoveKind.EnPassant;
         _game.MakeMove(move);
+        _marks.Add(new Mark(move.From, move.To, false));
+        AfterAction(capture ? Sfx.Capture : Sfx.Move);
+        AnimateSlide(move.From, move.To);
+    }
+
+    private void Apply(TimeJump jump)
+    {
+        _game.Jump(jump);
+        _marks.Add(new Mark(jump.From, jump.From, true));
+        _jumpFlashAt = Time.time;
+        AfterAction(Sfx.Jump);
+        AnimatePop(jump.From);
+    }
+
+    /// <summary>Plays a move ("e2e4") or a jump ("jump:e4:2") from the bot or the server.</summary>
+    private bool ApplyText(string action)
+    {
+        if (TimeJump.TryParse(action, out var jump))
+        {
+            if (!_game.IsLegalJump(jump))
+                return false;
+            Apply(jump);
+            return true;
+        }
+        var move = _game.Active.FindMove(action);
+        if (!move.HasValue)
+            return false;
+        Apply(move.Value);
+        return true;
+    }
+
+    private void AfterAction(AudioClip sound)
+    {
         _selected = null;
+        _jumpMode = false;
+        _jumpPiece = null;
         _notice = "";
         Redraw();
+        if (_game.IsOver)
+        {
+            Sfx.Play(sound);
+            _endAt = Time.time + 0.9f;
+        }
+        else
+        {
+            Sfx.Play(_game.Current.IsInCheck(_game.Current.SideToMove) ? Sfx.Check : sound);
+        }
         MaybeStartBot();
     }
 
     private void MaybeStartBot()
     {
-        if (_mode != GameMode.VsBot || _game.IsOver || _game.Current.SideToMove == _human)
+        if (_opponent != Opponent.Bot || _game.IsOver || _game.Current.SideToMove == _human)
             return;
-        var position = _game.Current;
         var bot = new Bot(_level);
         _botCancel = new CancellationTokenSource();
         var token = _botCancel.Token;
         _botReadyAt = Time.time + Random.Range(BotMinDelay, BotMaxDelay);
-        _botTask = Task.Run(() => bot.ChooseMove(position, token), token);
+        if (_timeTravel)
+        {
+            var choice = _game.SnapshotForBot();
+            _botTask = Task.Run(() => bot.ChooseTimeTravelAction(choice, token), token);
+        }
+        else
+        {
+            var position = _game.Current;
+            _botTask = Task.Run(() => bot.ChooseMove(position, token)?.ToUci(), token);
+        }
     }
 
     private void CancelBot()
@@ -260,20 +492,28 @@ public class ChessBoardView : MonoBehaviour
 
     private void Update()
     {
-        if (_inMenu)
+        PollNetwork();
+        if (_page != Page.Game)
             return;
 
         FitCamera();
+        Animate();
 
         // The search usually finishes quickly; the move is shown only after the pause.
         if (_botTask != null && _botTask.IsCompleted && Time.time >= _botReadyAt)
         {
             var task = _botTask;
             _botTask = null;
-            if (task.Status == TaskStatus.RanToCompletion && task.Result.HasValue)
-                PlayMove(task.Result.Value);
+            if (task.Status == TaskStatus.RanToCompletion && task.Result != null)
+                ApplyText(task.Result);
             else if (task.IsFaulted)
                 Debug.LogException(task.Exception);
+        }
+
+        if (GameFinished && !_endShown && Time.time >= _endAt)
+        {
+            _endShown = true;
+            Sfx.Play(PlayerWon == false ? Sfx.Lose : Sfx.Win);
         }
 
         HandlePointer();
@@ -285,14 +525,24 @@ public class ChessBoardView : MonoBehaviour
         {
             string folder = Path.Combine(Application.persistentDataPath, "Games");
             Directory.CreateDirectory(folder);
-            string file = Path.Combine(folder, DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss") + ".pgn");
-            string white = "Белые", black = "Чёрные";
-            if (_mode == GameMode.VsBot)
+            string stamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
+            string file;
+            if (_timeTravel)
             {
-                white = _human == PieceColor.White ? "Игрок" : "Бот";
-                black = _human == PieceColor.Black ? "Игрок" : "Бот";
+                // A game with jumps is not a normal chess game, so it is saved as a numbered list.
+                file = Path.Combine(folder, stamp + "_время.txt");
+                var text = new StringBuilder("Путешествие во времени, " + DateTime.Now.ToString("dd.MM.yyyy") + "\n");
+                var log = _game.RussianLog;
+                for (int i = 0; i < log.Count; i += 2)
+                    text.Append($"{i / 2 + 1}. {log[i]} {(i + 1 < log.Count ? log[i + 1] : "")}\n");
+                File.WriteAllText(file, text.ToString());
             }
-            File.WriteAllText(file, _game.ToPgn(white, black, DateTime.Now.ToString("yyyy.MM.dd")));
+            else
+            {
+                file = Path.Combine(folder, stamp + ".pgn");
+                File.WriteAllText(file, _game.Active.ToPgn(PlayerName(PieceColor.White), PlayerName(PieceColor.Black),
+                    DateTime.Now.ToString("yyyy.MM.dd")));
+            }
             _notice = "Сохранено: " + Path.GetFileName(file);
             Debug.Log("Game saved to " + file);
         }
@@ -306,12 +556,24 @@ public class ChessBoardView : MonoBehaviour
 
     private void HandlePointer()
     {
-        if (!PlayerMayMove)
+        if (!PlayerMayMove || Time.unscaledTime - Theme.LastClickTime < 0.25f)
             return;
 
         var mover = _game.Current.SideToMove;
         Vector3 world = _camera.ScreenToWorldPoint(Input.mousePosition);
         Square? hovered = WorldToSquare(world);
+
+        if (_jumpMode)
+        {
+            // Pick the piece to send back in time; the boards to choose from open in a window.
+            if (Input.GetMouseButtonDown(0) && hovered.HasValue && JumpTargets(hovered.Value).Count > 0)
+            {
+                _jumpPiece = hovered;
+                Sfx.Play(Sfx.Click);
+                RedrawHighlights();
+            }
+            return;
+        }
 
         if (Input.GetMouseButtonDown(0))
         {
@@ -329,7 +591,7 @@ public class ChessBoardView : MonoBehaviour
                 if (_dragged != null)
                     _dragged.sortingOrder = 10;
             }
-            else
+            else if (hovered.HasValue)
             {
                 _selected = null;
             }
@@ -352,19 +614,47 @@ public class ChessBoardView : MonoBehaviour
 
     private bool TryMove(Square from, Square to)
     {
-        // Promotion always picks a queen for now; a choice dialog comes later.
-        var move = _game.FindMove(from, to) ?? _game.FindMove(from, to, PieceType.Queen);
+        var move = _game.Active.FindMove(from, to);
+        if (!move.HasValue && _game.Active.FindMove(from, to, PieceType.Queen).HasValue)
+        {
+            // A pawn reaches the last rank: ask which piece it becomes.
+            _dragging = false;
+            _dragged = null;
+            _promotionFrom = from;
+            _promotionTo = to;
+            RedrawPieces();
+            return true;
+        }
         if (!move.HasValue)
             return false;
         _dragging = false;
         _dragged = null;
-        PlayMove(move.Value);
+        PlayerMove(move.Value);
         return true;
+    }
+
+    private void Promote(PieceType type)
+    {
+        var move = _game.Active.FindMove(_promotionFrom!.Value, _promotionTo!.Value, type);
+        _promotionFrom = null;
+        _promotionTo = null;
+        if (move.HasValue)
+            PlayerMove(move.Value);
+    }
+
+    /// <summary>The jumps the piece on <paramref name="from"/> can make now.</summary>
+    private List<TimeJump> JumpTargets(Square from)
+    {
+        var result = new List<TimeJump>();
+        foreach (var jump in _game.LegalJumps())
+            if (jump.From == from)
+                result.Add(jump);
+        return result;
     }
 
     // ---------------------------------------------------------------- drawing
 
-    private bool Flipped => _mode == GameMode.VsBot && _human == PieceColor.Black;
+    private bool Flipped => _opponent != Opponent.SameDevice && _human == PieceColor.Black;
 
     private Vector3 SquareToWorld(Square square)
     {
@@ -405,6 +695,7 @@ public class ChessBoardView : MonoBehaviour
             Destroy(renderer.gameObject);
         _pieces.Clear();
         _dragged = null;
+        _animated = null;
 
         var position = _game.Current;
         for (int i = 0; i < 64; i++)
@@ -412,14 +703,63 @@ public class ChessBoardView : MonoBehaviour
             var piece = position[i];
             if (!piece.HasValue)
                 continue;
-            string key = (piece.Value.Color == PieceColor.White ? "w" : "b")
-                + char.ToUpperInvariant(piece.Value.Symbol);
+            string key = PieceKey(piece.Value);
             if (!_pieceSprites.TryGetValue(key, out var sprite))
                 continue;
             var renderer = NewSprite(key, _root, sprite, 5);
             renderer.transform.position = SquareToWorld(new Square(i));
             renderer.transform.localScale = Vector3.one * 0.95f;
             _pieces[i] = renderer;
+        }
+    }
+
+    private void AnimateSlide(Square from, Square to)
+    {
+        if (!_pieces.TryGetValue(to.Index, out var renderer))
+            return;
+        _animated = renderer;
+        _animateFrom = SquareToWorld(from);
+        _animateTo = SquareToWorld(to);
+        _animateStart = Time.time;
+        _animatePop = false;
+        renderer.sortingOrder = 8;
+        renderer.transform.position = _animateFrom;
+    }
+
+    private void AnimatePop(Square square)
+    {
+        if (!_pieces.TryGetValue(square.Index, out var renderer))
+            return;
+        _animated = renderer;
+        _animateTo = SquareToWorld(square);
+        _animateStart = Time.time;
+        _animatePop = true;
+        renderer.transform.localScale = Vector3.zero;
+    }
+
+    private void Animate()
+    {
+        if (_animated == null)
+            return;
+        float duration = _animatePop ? 0.45f : MoveAnimation;
+        float t = Mathf.Clamp01((Time.time - _animateStart) / duration);
+        float eased = 1 - (1 - t) * (1 - t);
+        if (_animatePop)
+        {
+            // Overshoot a little, like the piece arriving through a portal.
+            float scale = t < 1 ? Mathf.Sin(t * Mathf.PI * 0.75f) / Mathf.Sin(Mathf.PI * 0.75f) : 1;
+            _animated.transform.localScale = Vector3.one * 0.95f * scale;
+            _animated.transform.rotation = Quaternion.Euler(0, 0, (1 - eased) * 360);
+        }
+        else
+        {
+            _animated.transform.position = Vector3.Lerp(_animateFrom, _animateTo, eased);
+        }
+        if (t >= 1)
+        {
+            _animated.sortingOrder = 5;
+            _animated.transform.rotation = Quaternion.identity;
+            _animated = null;
         }
     }
 
@@ -431,11 +771,18 @@ public class ChessBoardView : MonoBehaviour
             _dots[i].enabled = false;
         }
 
-        if (_game.Moves.Count > 0)
+        if (_marks.Count > 0)
         {
-            var last = _game.Moves[_game.Moves.Count - 1];
-            Tint(last.From, LastMoveTint);
-            Tint(last.To, LastMoveTint);
+            var last = _marks[_marks.Count - 1];
+            if (last.Jump)
+            {
+                Tint(last.From, JumpTint);
+            }
+            else
+            {
+                Tint(last.From, LastMoveTint);
+                Tint(last.To, LastMoveTint);
+            }
         }
 
         var position = _game.Current;
@@ -446,10 +793,18 @@ public class ChessBoardView : MonoBehaviour
                 Tint(king.Value, CheckTint);
         }
 
+        if (_jumpMode)
+        {
+            // Every piece that can travel glows purple.
+            foreach (var jump in _game.LegalJumps())
+                Tint(jump.From, _jumpPiece == jump.From ? SelectedTint : JumpTint);
+            return;
+        }
+
         if (_selected.HasValue)
         {
             Tint(_selected.Value, SelectedTint);
-            foreach (var move in _game.LegalMoves)
+            foreach (var move in _game.Active.LegalMoves)
             {
                 if (move.From != _selected.Value)
                     continue;
@@ -467,7 +822,7 @@ public class ChessBoardView : MonoBehaviour
         _overlays[square.Index].color = color;
     }
 
-    /// <summary>True when there is room for the move list to the right of the board.</summary>
+    /// <summary>True when there is room for the side panel to the right of the board.</summary>
     private bool WideLayout => _camera.aspect * (BoardHalf + TopPanel * 0.5f) * 2 >= BoardHalf * 2 + SidePanel;
 
     private void FitCamera()
@@ -475,11 +830,11 @@ public class ChessBoardView : MonoBehaviour
         float aspect = Mathf.Max(0.1f, _camera.aspect);
         if (WideLayout)
         {
-            // Board on the left, move list on the right.
+            // Board on the left, side panel on the right.
             float halfHeight = BoardHalf + TopPanel * 0.5f;
             _camera.orthographicSize = halfHeight;
             float halfWidth = halfHeight * aspect;
-            // Centre the board and the list together; the board's left edge sits at -BoardHalf.
+            // Centre the board and the panel together; the board's left edge sits at -BoardHalf.
             float used = BoardHalf * 2 + SidePanel;
             float margin = Mathf.Max(0.3f, (halfWidth * 2 - used) / 2);
             _camera.transform.position = new Vector3(halfWidth - margin - BoardHalf, TopPanel * 0.5f, -10);
@@ -491,212 +846,5 @@ public class ChessBoardView : MonoBehaviour
             _camera.orthographicSize = halfHeight;
             _camera.transform.position = new Vector3(0, TopPanel * 0.5f, -10);
         }
-    }
-
-    // ---------------------------------------------------------------- UI
-
-    private string ColorName(PieceColor color, bool genitive) =>
-        color == PieceColor.White ? (genitive ? "белых" : "белые") : (genitive ? "чёрных" : "чёрные");
-
-    private string StatusText()
-    {
-        switch (_game.Status)
-        {
-            case GameStatus.Checkmate:
-                if (_mode == GameMode.TwoPlayers)
-                    return $"Мат. Победили {ColorName(_game.Winner!.Value, false)}!";
-                return _game.Winner == _human ? "Мат. Вы победили!" : "Мат. Победил бот.";
-            case GameStatus.Stalemate:
-                return "Пат. Ничья.";
-            case GameStatus.FiftyMoveRule:
-                return "Ничья по правилу 50 ходов.";
-            case GameStatus.ThreefoldRepetition:
-                return "Ничья: позиция повторилась три раза.";
-            case GameStatus.InsufficientMaterial:
-                return "Ничья: никто не может поставить мат.";
-        }
-
-        if (BotThinking)
-            return "Бот думает...";
-        bool check = _game.Current.IsInCheck(_game.Current.SideToMove);
-        string turn = _mode == GameMode.TwoPlayers
-            ? $"Ход {ColorName(_game.Current.SideToMove, true)}."
-            : "Ваш ход.";
-        return check ? "Шах! " + turn : turn;
-    }
-
-    private GUIStyle Style(GUIStyle baseStyle, int size, TextAnchor anchor = TextAnchor.MiddleCenter)
-    {
-        var style = new GUIStyle(baseStyle) { fontSize = size, alignment = anchor };
-        style.normal.textColor = Color.white;
-        return style;
-    }
-
-    private void OnGUI()
-    {
-        // Layout is written for a 720 px tall screen and scaled to the real one.
-        float scale = Screen.height / 720f;
-        GUI.matrix = Matrix4x4.Scale(new Vector3(scale, scale, 1));
-        float width = Screen.width / scale;
-
-        if (_inMenu)
-            DrawMenu(width);
-        else
-            DrawGameUi(width, scale);
-    }
-
-    private void DrawMenu(float width)
-    {
-        var title = Style(GUI.skin.label, 48);
-        var heading = Style(GUI.skin.label, 20);
-        var small = Style(GUI.skin.label, 14);
-        var button = new GUIStyle(GUI.skin.button) { fontSize = 18 };
-        var toolbar = new GUIStyle(GUI.skin.button) { fontSize = 15 };
-
-        float panelWidth = Mathf.Min(440, width - 40);
-        GUILayout.BeginArea(new Rect((width - panelWidth) / 2, 60, panelWidth, 640));
-
-        GUILayout.Label("Шахматы", title, GUILayout.Height(70));
-        GUILayout.Space(20);
-
-        GUILayout.Label("Игра против бота", heading);
-        GUILayout.Label("Ваш цвет", small);
-        _menuColor = GUILayout.Toolbar(_menuColor, ColorNames, toolbar, GUILayout.Height(32));
-        GUILayout.Space(6);
-        GUILayout.Label("Сложность", small);
-        _level = (BotLevel)GUILayout.Toolbar((int)_level, LevelNames, toolbar, GUILayout.Height(32));
-        GUILayout.Space(10);
-        if (GUILayout.Button("Играть против бота", button, GUILayout.Height(48)))
-            StartGame(GameMode.VsBot);
-
-        GUILayout.Space(24);
-        if (GUILayout.Button("Вдвоём на одном устройстве", button, GUILayout.Height(48)))
-            StartGame(GameMode.TwoPlayers);
-
-        GUILayout.Space(24);
-        GUILayout.Label("Скоро", heading);
-        GUI.enabled = false;
-        GUILayout.Button("Путешествие во времени", button, GUILayout.Height(40));
-        GUILayout.Button("Онлайн со своей армией", button, GUILayout.Height(40));
-        GUI.enabled = true;
-
-        GUILayout.EndArea();
-    }
-
-    private void DrawGameUi(float width, float scale)
-    {
-        var status = Style(GUI.skin.label, 22);
-        var button = new GUIStyle(GUI.skin.button) { fontSize = 16 };
-
-        GUILayout.BeginArea(new Rect(10, 8, width - 20, 110));
-        GUILayout.BeginHorizontal();
-        GUILayout.FlexibleSpace();
-        if (GUILayout.Button("Меню", button, GUILayout.Height(34), GUILayout.Width(110)))
-            ShowMenu();
-        if (GUILayout.Button("Новая партия", button, GUILayout.Height(34), GUILayout.Width(160)))
-            StartGame(_mode);
-        GUI.enabled = _game.Moves.Count > 0;
-        if (GUILayout.Button("Отменить ход", button, GUILayout.Height(34), GUILayout.Width(160)))
-            Undo();
-        GUI.enabled = true;
-        GUILayout.FlexibleSpace();
-        GUILayout.EndHorizontal();
-        GUILayout.Label(StatusText(), status, GUILayout.Height(40));
-        GUILayout.EndArea();
-
-        if (_inMenu)
-            return;
-
-        if (WideLayout)
-            DrawMoveList(scale);
-        else
-            DrawLastMoves(width);
-
-    }
-
-    /// <summary>The moves in Russian notation, recomputed only when a move is made or taken back.</summary>
-    private List<string> RussianMoves()
-    {
-        if (_russianMovesGame != _game || _russianMovesCount != _game.Moves.Count)
-        {
-            _russianMoves = _game.MovesIn(NotationLanguage.Russian);
-            _russianMovesGame = _game;
-            _russianMovesCount = _game.Moves.Count;
-        }
-        return _russianMoves;
-    }
-
-    /// <summary>The full move list in a column right of the board.</summary>
-    private void DrawMoveList(float scale)
-    {
-        // Place the column from the board's right edge to the right side of the screen.
-        Vector3 boardRight = _camera.WorldToScreenPoint(new Vector3(BoardHalf, BoardHalf, 0));
-        Vector3 boardBottom = _camera.WorldToScreenPoint(new Vector3(BoardHalf, -BoardHalf, 0));
-        float left = boardRight.x / scale + 16;
-        float top = (Screen.height - boardRight.y) / scale;
-        float bottom = (Screen.height - boardBottom.y) / scale;
-        float columnWidth = Mathf.Min(260, Screen.width / scale - left - 16);
-        if (columnWidth < 120)
-            return;
-
-        var header = Style(GUI.skin.label, 18, TextAnchor.MiddleLeft);
-        var row = Style(GUI.skin.label, 16, TextAnchor.MiddleLeft);
-        var button = new GUIStyle(GUI.skin.button) { fontSize = 14 };
-
-        GUI.Box(new Rect(left, top, columnWidth, bottom - top), GUIContent.none);
-        GUILayout.BeginArea(new Rect(left + 8, top + 6, columnWidth - 16, bottom - top - 12));
-        GUILayout.Label("Ходы", header);
-
-        var moves = RussianMoves();
-        if (moves.Count != _shownMoveCount)
-        {
-            // New move: scroll to the end of the list.
-            _shownMoveCount = moves.Count;
-            _moveListScroll.y = float.MaxValue;
-        }
-
-        _moveListScroll = GUILayout.BeginScrollView(_moveListScroll, GUILayout.ExpandHeight(true));
-        for (int i = 0; i < moves.Count; i += 2)
-        {
-            GUILayout.BeginHorizontal();
-            GUILayout.Label($"{i / 2 + 1}.", row, GUILayout.Width(40));
-            GUILayout.Label(moves[i], row, GUILayout.Width(90));
-            GUILayout.Label(i + 1 < moves.Count ? moves[i + 1] : "", row, GUILayout.Width(90));
-            GUILayout.EndHorizontal();
-        }
-        GUILayout.EndScrollView();
-
-        if (_notice.Length > 0)
-        {
-            var notice = Style(GUI.skin.label, 13);
-            notice.wordWrap = true;
-            GUILayout.Label(_notice, notice);
-        }
-        GUI.enabled = _game.Moves.Count > 0;
-        if (GUILayout.Button("Сохранить партию", button, GUILayout.Height(30)))
-            SaveGame();
-        GUI.enabled = true;
-        GUILayout.EndArea();
-    }
-
-    /// <summary>On narrow screens: the last few moves in one line under the status.</summary>
-    private void DrawLastMoves(float width)
-    {
-        var line = Style(GUI.skin.label, 15);
-        if (_notice.Length > 0)
-        {
-            GUI.Label(new Rect(10, 104, width - 20, 24), _notice, line);
-            return;
-        }
-        var moves = RussianMoves();
-        if (moves.Count == 0)
-            return;
-        int start = Mathf.Max(0, moves.Count - 6);
-        if (start % 2 == 1)
-            start--;
-        var parts = new List<string>();
-        for (int i = start; i < moves.Count; i++)
-            parts.Add(i % 2 == 0 ? $"{i / 2 + 1}. {moves[i]}" : moves[i]);
-        GUI.Label(new Rect(10, 104, width - 20, 24), string.Join("  ", parts), line);
     }
 }

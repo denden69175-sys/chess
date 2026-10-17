@@ -17,3 +17,6 @@ unity/[Uu]ser[Ss]ettings/
 unity/*.csproj
 unity/*.sln
 unity/.vs/
+
+# Built server
+server-build/

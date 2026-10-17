@@ -108,7 +108,7 @@ namespace Chess.Core
         /// <summary>Every action so far, moves and jumps, in English notation.</summary>
         public IReadOnlyList<string> Log => _log;
 
-        /// <summary>The same actions in Russian notation, e.g. "Кf3" or "Кf3 ⟲2".</summary>
+        /// <summary>The same actions in Russian notation, e.g. "Кf3" or "Кf3 «2" (two own moves back).</summary>
         public IReadOnlyList<string> RussianLog => _russianLog;
 
         public int ActionCount => _log.Count;
@@ -211,7 +211,7 @@ namespace Chess.Core
             _lastJumpAt[(int)color] = _ownMoves[(int)color];
             _ownMoves[(int)color]++;
             _log.Add($"{Notation.Letter(piece.Type, NotationLanguage.English)}{jump.From}@-{jump.StepsBack}");
-            _russianLog.Add($"{Notation.Letter(piece.Type, NotationLanguage.Russian)}{jump.From} ⟲{jump.StepsBack}");
+            _russianLog.Add($"{Notation.Letter(piece.Type, NotationLanguage.Russian)}{jump.From} «{jump.StepsBack}");
         }
 
         /// <summary>Plays a move ("e2e4") or a jump ("jump:e4:2") given as text, as the server receives them.</summary>

@@ -44,22 +44,27 @@ public sealed class Message
     /// <summary>Human-readable text for errors, in Russian.</summary>
     public string? message { get; set; }
 
-    private static readonly JsonSerializerOptions Options = new()
-    {
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-    };
-
-    public string ToJson() => JsonSerializer.Serialize(this, Options);
+    public string ToJson() => JsonSerializer.Serialize(this, MessageJson.Default.Message);
 
     public static Message? FromJson(string json)
     {
         try
         {
-            return JsonSerializer.Deserialize<Message>(json, Options);
+            return JsonSerializer.Deserialize(json, MessageJson.Default.Message);
         }
         catch (JsonException)
         {
             return null;
         }
     }
+}
+
+/// <summary>
+/// Compile-time JSON code for <see cref="Message"/>, so the server also works as a trimmed
+/// single-file program, where reflection-based JSON is switched off.
+/// </summary>
+[JsonSourceGenerationOptions(DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
+[JsonSerializable(typeof(Message))]
+internal partial class MessageJson : JsonSerializerContext
+{
 }

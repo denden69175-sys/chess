@@ -7,6 +7,19 @@
     <RootNamespace>Chess.Server</RootNamespace>
   </PropertyGroup>
 
+  <!--
+    A Windows/Linux/macOS build (dotnet publish -r win-x64) becomes one small program that runs
+    without .NET installed. The Docker image does not set a runtime and stays a normal build.
+  -->
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <PublishTrimmed>true</PublishTrimmed>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\Chess.Core\Chess.Core.csproj" />
   </ItemGroup>

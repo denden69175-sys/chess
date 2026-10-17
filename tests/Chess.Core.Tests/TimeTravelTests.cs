@@ -49,7 +49,7 @@ namespace Chess.Core.Tests
             Assert.Equal(PieceColor.Black, game.Current.SideToMove);
             Assert.Equal(1, game.JumpsLeft(PieceColor.White));
             Assert.Equal("Bc4@-3", game.Log.Last());
-            Assert.Equal("Сc4 ⟲3", game.RussianLog.Last());
+            Assert.Equal("Сc4 «3", game.RussianLog.Last());
         }
 
         [Fact]
