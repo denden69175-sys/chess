@@ -14,6 +14,8 @@ public partial class ChessBoardView
         Army,
         Online,
         Game,
+        FiveDSetup,
+        FiveD,
     }
 
     private static readonly string[] LevelNames = { "Лёгкий", "Средний", "Сложный" };
@@ -49,6 +51,8 @@ public partial class ChessBoardView
             CancelBot();
             _root.gameObject.SetActive(false);
         }
+        if (page != Page.FiveD)
+            CancelFiveDBot();
         _page = page;
         _pageShownAt = Time.time;
     }
@@ -103,6 +107,10 @@ public partial class ChessBoardView
         {
             DrawGameUi(width, height, scale);
         }
+        else if (_page == Page.FiveD)
+        {
+            DrawFiveD(width, height);
+        }
         else
         {
             Theme.Background(width, height, _floatingPieces);
@@ -122,6 +130,9 @@ public partial class ChessBoardView
                     break;
                 case Page.Online:
                     DrawOnline(width, height);
+                    break;
+                case Page.FiveDSetup:
+                    DrawFiveDSetup(width, height);
                     break;
             }
             GUI.color = Color.white;
@@ -176,7 +187,7 @@ public partial class ChessBoardView
         float tileHeight = 112;
         float gridWidth = columns * tileWidth + (columns - 1) * gap;
         float top = 156;
-        int count = 6;
+        int count = 7;
         int rows = (count + columns - 1) / columns;
         float gridHeight = rows * (tileHeight + gap) + 20;
 
@@ -197,11 +208,13 @@ public partial class ChessBoardView
             StartSameDeviceGame(false);
         if (Tile(Cell(2), "Путешествие во времени", "Отправь фигуру в прошлое и открой новую линию времени.", Theme.Purple, "wQ", 2))
             ShowPage(Page.TimeSetup);
-        if (Tile(Cell(3), "Своя армия", "Собери войско на 39 очков. Хоть четыре ферзя!", Theme.Orange, "wR", 3))
+        if (Tile(Cell(3), "5D шахматы", "Все доски сразу: ходи в прошлое и между линиями времени.", FiveDColor, "wB", 3))
+            ShowPage(Page.FiveDSetup);
+        if (Tile(Cell(4), "Своя армия", "Собери войско на 39 очков. Хоть четыре ферзя!", Theme.Orange, "wR", 4))
             ShowPage(Page.Army);
-        if (Tile(Cell(4), "Онлайн", "Найди соперника или позови друга по коду комнаты.", Theme.Teal, "bN", 4))
+        if (Tile(Cell(5), "Онлайн", "Найди соперника или позови друга по коду комнаты.", Theme.Teal, "bN", 5))
             ShowPage(Page.Online);
-        if (Tile(Cell(5), "Задания и сундуки", "Выполняй задания и выбивай раскраски для фигур.", Theme.Grey, "bQ", 5, locked: true))
+        if (Tile(Cell(6), "Задания и сундуки", "Выполняй задания и выбивай раскраски для фигур.", Theme.Grey, "bQ", 6, locked: true))
             ShowToast("Задания и сундуки появятся в следующем обновлении.");
 
         if (scroll)

@@ -152,4 +152,21 @@ public class GameServerTests
         server.Handle(white, new Message { type = "move", action = "jump:f3:1" });
         Assert.Equal("jump:f3:1", black.Last("move").action);
     }
+
+    [Fact]
+    public void FiveDTurnsArriveWhole()
+    {
+        var (server, white, black) = StartClassic(Modes.FiveD);
+        server.Handle(white, new Message { type = "move", action = "0,0,g1>0,0,f3" });
+        server.Handle(black, new Message { type = "move", action = "0,1,e7>0,1,e6" });
+        // The knight jumps one turn back and starts a new timeline.
+        server.Handle(white, new Message { type = "move", action = "0,2,f3>0,0,h3" });
+        Assert.Equal("0,2,f3>0,0,h3", black.Last("move").action);
+
+        // Black has to move on the new timeline; a turn that skips it is refused.
+        server.Handle(black, new Message { type = "move", action = "0,3,e6>0,3,e5" });
+        Assert.Equal("error", black.Inbox.Last().type);
+        server.Handle(black, new Message { type = "move", action = "1,1,e7>1,1,e5;0,3,d7>0,3,d6" });
+        Assert.Equal("1,1,e7>1,1,e5;0,3,d7>0,3,d6", white.Last("move").action);
+    }
 }

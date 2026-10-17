@@ -10,9 +10,12 @@ public partial class ChessBoardView
     private int _shownMoveCount;
     private string _notice = "";
 
-    private bool GameFinished => _game.IsOver || _onlineEnded;
+    /// <summary>The rules ended the game, on the ordinary board or in 5D.</summary>
+    private bool RulesOver => _page == Page.FiveD ? _md.IsOver : _game.IsOver;
 
-    private PieceColor? Winner => _onlineEnded ? _onlineWinner : _game.Winner;
+    private bool GameFinished => RulesOver || _onlineEnded;
+
+    private PieceColor? Winner => _onlineEnded ? _onlineWinner : _page == Page.FiveD ? _md.Winner : _game.Winner;
 
     /// <summary>True for a win, false for a loss, null for a draw or a game between two people at one screen.</summary>
     private bool? PlayerWon
@@ -52,16 +55,18 @@ public partial class ChessBoardView
 
     private string EndReason()
     {
-        if (_onlineEnded && !_game.IsOver)
+        if (_onlineEnded && !RulesOver)
         {
             return _onlineReason switch
             {
-                "resign" => Winner == _human ? "Соперник сдался." : "Вы сдались.",
+                "resign" => Winner == _human ? (_opponent == Opponent.Bot ? "Бот сдался." : "Соперник сдался.") : "Вы сдались.",
                 "opponent_left" => "Соперник вышел из игры.",
                 "connection" => "Связь с сервером пропала.",
                 _ => "Партия окончена.",
             };
         }
+        if (_page == Page.FiveD)
+            return _md.Result == MultiverseResult.Checkmate ? "Мат во всех линиях времени." : "Пат.";
         return _game.Status switch
         {
             GameStatus.Checkmate => "Мат.",

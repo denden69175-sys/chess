@@ -7,8 +7,8 @@ public partial class ChessBoardView
 {
     private const string DefaultServer = "ws://localhost:5080/ws";
 
-    private static readonly string[] OnlineModeNames = { "Классика", "Своя армия", "Время" };
-    private static readonly string[] OnlineModeCodes = { "classic", "army", "timetravel" };
+    private static readonly string[] OnlineModeNames = { "Классика", "Своя армия", "Время", "5D" };
+    private static readonly string[] OnlineModeCodes = { "classic", "army", "timetravel", "5d" };
 
     private enum NetState
     {
@@ -121,7 +121,9 @@ public partial class ChessBoardView
                 break;
             case "move":
                 _waitingForServer = false;
-                if (_page == Page.Game && _opponent == Opponent.Online && !ApplyText(message.action))
+                if (_page == Page.FiveD && _opponent == Opponent.Online)
+                    ApplyFiveDTurn(message.action);
+                else if (_page == Page.Game && _opponent == Opponent.Online && !ApplyText(message.action))
                     ShowToast("Ход с сервера не подошёл к доске: " + message.action);
                 break;
             case "end":
@@ -131,14 +133,14 @@ public partial class ChessBoardView
                 _waitingForServer = false;
                 if (_page == Page.Game)
                     RedrawPieces();
-                else
+                else if (_page != Page.FiveD)
                     _netState = NetState.Idle;
                 ShowToast(message.message);
                 break;
             case OnlineClient.Closed:
                 _net?.Dispose();
                 _net = null;
-                if (_page == Page.Game && _opponent == Opponent.Online && !GameFinished)
+                if ((_page == Page.Game || _page == Page.FiveD) && _opponent == Opponent.Online && !GameFinished)
                     EndOnlineGame("", "connection");
                 else if (_netState != NetState.Idle)
                     ShowToast(message.message + "\nПроверьте, что сервер запущен и адрес верный.");
@@ -159,7 +161,10 @@ public partial class ChessBoardView
         _blackArmy = army ? Army.FromCode(message.blackArmy) : null;
         _botArmyName = "";
         _opponentName = message.name.Length > 0 ? message.name : "Соперник";
-        StartGame();
+        if (message.mode == "5d")
+            StartFiveD();
+        else
+            StartGame();
         _onlineEnded = false;
         _waitingForServer = false;
         ShowToast($"Соперник найден: {_opponentName}. Вы играете {(_human == PieceColor.White ? "белыми" : "чёрными")}.");
@@ -167,14 +172,14 @@ public partial class ChessBoardView
 
     private void EndOnlineGame(string result, string reason)
     {
-        if (_onlineEnded || _page != Page.Game || _opponent != Opponent.Online)
+        if (_onlineEnded || (_page != Page.Game && _page != Page.FiveD) || _opponent != Opponent.Online)
             return;
         _onlineEnded = true;
         _onlineWinner = result == "white" ? PieceColor.White : result == "black" ? PieceColor.Black : (PieceColor?)null;
         _onlineReason = reason;
         _waitingForServer = false;
         // A checkmate already set the timer when the last move arrived.
-        if (!_game.IsOver)
+        if (!RulesOver)
             _endAt = Time.time + 0.2f;
     }
 

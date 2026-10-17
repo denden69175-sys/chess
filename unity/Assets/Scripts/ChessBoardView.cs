@@ -343,7 +343,9 @@ public partial class ChessBoardView : MonoBehaviour
 
     private void Rematch()
     {
-        if (_opponent == Opponent.Bot)
+        if (_page == Page.FiveD)
+            RematchFiveD();
+        else if (_opponent == Opponent.Bot)
             StartBotGame(_timeTravel, _botArmyName.Length > 0 ? PlayerArmy() : null);
         else
             StartGame();
@@ -493,6 +495,8 @@ public partial class ChessBoardView : MonoBehaviour
     private void Update()
     {
         PollNetwork();
+        if (_page == Page.FiveD)
+            UpdateFiveD();
         if (_page != Page.Game)
             return;
 

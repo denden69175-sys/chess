@@ -158,6 +158,7 @@ namespace Chess.Core
             Mover = other.Mover;
             Result = other.Result;
             Winner = other.Winner;
+            _history.AddRange(other._history);
             foreach (var move in other._turnMoves)
                 _turnMoves.Add(move);
             // Undo records point at timelines by index, which the copy shares.
