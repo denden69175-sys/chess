@@ -197,7 +197,7 @@ public static class Theme
         var label = Label(size, active ? Text : Muted, TextAnchor.MiddleCenter, bold: true);
         ShadowText(face, text, label, 1.5f);
 
-        bool clicked = GUI.Button(rect, GUIContent.none, GUIStyle.none) && !InputBlocked;
+        bool clicked = !InputBlocked && GUI.Button(rect, GUIContent.none, GUIStyle.none);
         GUI.enabled = wasEnabled;
         if (clicked)
         {
@@ -226,7 +226,7 @@ public static class Theme
                 Fill(cell, WithAlpha(PanelLight, 0.8f), cell.height * 0.5f);
             }
             GUI.Label(cell, options[i], Label(size, i == selected ? Text : Muted, TextAnchor.MiddleCenter, bold: i == selected));
-            if (GUI.Button(cell, GUIContent.none, GUIStyle.none) && i != selected && !InputBlocked)
+            if (!InputBlocked && GUI.Button(cell, GUIContent.none, GUIStyle.none) && i != selected)
             {
                 selected = i;
                 Sfx.Play(Sfx.Click);

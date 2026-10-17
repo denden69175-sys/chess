@@ -316,8 +316,11 @@ namespace Chess.Core
                 case PieceType.Knight:
                     foreach (var jump in KnightJumps)
                         TryTarget(timeline, ply, from, piece, jump, 1, moves);
+                    AddTimeJumps(timeline, ply, from, piece, moves);
                     return;
             }
+            if (piece.Type != PieceType.King)
+                AddTimeJumps(timeline, ply, from, piece, moves);
             foreach (var direction in SlideDirections)
             {
                 int axes = direction.Count(d => d != 0);
@@ -342,6 +345,30 @@ namespace Chess.Core
         /// Adds the move to the square <paramref name="step"/> times along <paramref name="d"/>
         /// (file, rank, turns, timelines). Returns true when a slide may go on past it.
         /// </summary>
+        /// <summary>
+        /// Our extra rule on top of 5D chess: a piece other than a king or pawn may jump straight to
+        /// its own square on any earlier board where the same side was to move, on any timeline, or
+        /// to the same moment of another timeline, if that square is free there. It flies over
+        /// everything in between. Without it pieces can rarely reach the past, because the piece
+        /// itself usually stood on its square back then.
+        /// </summary>
+        private void AddTimeJumps(int timeline, int ply, Square from, Piece piece, List<Move5D> moves)
+        {
+            foreach (var line in _timelines.Values)
+            {
+                for (int toPly = ply; toPly >= line.StartPly; toPly -= 2)
+                {
+                    if (!line.HasBoard(toPly) || (line.Index == timeline && toPly == ply))
+                        continue;
+                    if (line[toPly][from].HasValue)
+                        continue;
+                    var move = new Move5D(timeline, ply, from, line.Index, toPly, from);
+                    if (!moves.Contains(move))
+                        moves.Add(move);
+                }
+            }
+        }
+
         private bool TryTarget(int timeline, int ply, Square from, Piece piece, int[] d, int step, List<Move5D> moves)
         {
             int file = from.File + d[0] * step;

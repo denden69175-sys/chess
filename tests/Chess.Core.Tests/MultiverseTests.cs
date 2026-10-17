@@ -192,5 +192,26 @@ namespace Chess.Core.Tests
             }
             Assert.True(game.History.Count > 10);
         }
+    
+        [Fact]
+        public void MovedPieceCanJumpStraightBackToItsSquare()
+        {
+            var game = new MultiverseGame();
+            Play(game, "g1f3", "e7e6");
+            // f3 was empty one turn ago, so the knight can appear there.
+            var jump = Travel(game, "f3", 0, 0, "f3");
+            game.MakeMove(jump);
+            Assert.True(game.HasTimeline(1));
+            Assert.Equal(PieceType.Knight, game.Timeline(1).End[Square.Parse("f3")]!.Value.Type);
+            Assert.True(game.CanSubmit);
+        }
+
+        [Fact]
+        public void PieceCannotJumpOntoItsOwnPastSelf()
+        {
+            var game = new MultiverseGame();
+            Play(game, "g1f3", "e7e6");
+            Assert.DoesNotContain(game.MovesFrom(0), m => m.From == Square.Parse("b1") && !m.IsSpatial && m.To == Square.Parse("b1"));
+        }
     }
 }

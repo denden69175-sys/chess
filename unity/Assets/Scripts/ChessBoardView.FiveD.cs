@@ -52,6 +52,29 @@ public partial class ChessBoardView
     private bool _mdBotSubmit;
 
     private Texture2D? _checker;
+    private bool _mdRules;
+    private Vector2 _mdRulesScroll;
+
+    private const string FiveDRules =
+        "<b>Поле</b>\n" +
+        "•  Каждая доска — позиция в какой-то момент партии. Слева направо идёт время: «Ход 1 · белые», «Ход 1 · чёрные» и так дальше.\n" +
+        "•  Каждый ряд досок — отдельная линия времени. Её номер слева: 0 — основная, +1, +2… — линии белых (ниже), −1, −2… — линии чёрных (выше).\n" +
+        "•  Рамка показывает, чей ход на доске: светлая — белых, тёмная — чёрных. Золотая рамка — на этой доске можно ходить сейчас.\n" +
+        "•  Поле двигается мышью (зажать и тянуть), масштаб — колёсиком или кнопками «−» и «+». «К настоящему» возвращает к текущим доскам.\n\n" +
+        "<b>Как сходить в прошлое</b>\n" +
+        "•  Нажмите на свою фигуру на доске с золотой рамкой. Зелёные точки — обычные ходы. Фиолетовые точки на других досках — ходы в прошлое и на другие линии. Нажмите на точку.\n" +
+        "•  Прыжок во времени: любая фигура, кроме короля и пешки, может перенестись на свою же клетку на любую более раннюю доску, где ходила та же сторона, или на ту же доску другой линии, если клетка там свободна. Поэтому фигура, которая ещё не сходила, прыгнуть не может: в прошлом на её клетке стоит она сама. Сначала сходите ей, а на следующем ходу отправляйте назад.\n" +
+        "•  Кроме прыжка, фигуры ходят «пятимерно»: время и линии — это ещё два направления, кроме вертикали и горизонтали. Шаг назад во времени — на одну доску своей стороны влево, шаг по линиям — на ряд вверх или вниз. Ладья идёт по одному направлению, слон — ровно по двум сразу, ферзь и король — по любым, конь — на 2 по одному направлению и на 1 по другому.\n" +
+        "•  Если фигура попала на доску в прошлом, с этой доски начинается новая линия времени. На ней фигура из будущего стоит вместе со всеми фигурами того момента, а с исходной доски она пропадает.\n" +
+        "•  Если у стороны линий больше, чем у соперника, больше чем на одну, лишние линии бледнеют: они неактивны и не двигают «настоящее».\n\n" +
+        "<b>Как закончить ход</b>\n" +
+        "•  Фиолетовая полоса — «настоящее»: самый ранний момент среди последних досок активных линий. Сходите на всех досках, которые стоят в настоящем, тогда полоса перейдёт к сопернику и можно жать «Завершить ход».\n" +
+        "•  На других досках с золотой рамкой ходить можно, но не обязательно.\n" +
+        "•  «Отменить ход» откатывает ходы этого хода по одному.\n" +
+        "•  Завершить ход нельзя, если после него соперник сможет взять любого вашего короля на любой доске, в том числе ходом через время.\n\n" +
+        "<b>Конец партии</b>\n" +
+        "•  Мат — когда любой вариант хода оставляет короля под ударом. Пат — ходить некуда, но король не под ударом: ничья.\n" +
+        "•  Упрощения нашей версии: пешки по времени не ходят, пешка всегда превращается в ферзя.";
 
     private bool FiveDBotBusy => _mdBotTask != null || _mdBotMoves.Count > 0 || _mdBotSubmit;
 
@@ -467,7 +490,7 @@ public partial class ChessBoardView
     private void DrawFiveD(float width, float height)
     {
         Theme.Gradient(new Rect(0, 0, width, height), Theme.BackgroundTop, Theme.BackgroundBottom);
-        bool window = _endShown && !_endHidden;
+        bool window = (_endShown && !_endHidden) || _mdRules;
         Theme.InputBlocked = window;
 
         _mdCanvas = new Rect(0, 112, width, height - 112 - 74);
@@ -504,8 +527,10 @@ public partial class ChessBoardView
         {
             RematchFiveD();
         }
-        if (width >= 560)
-            GUI.Label(new Rect(140, 12, width - 292, 44), "5D шахматы", Theme.Label(24, FiveDColor, TextAnchor.MiddleCenter, display: true));
+        if (Theme.Button(new Rect(right - 292, 12, 140, 44), "Правила", FiveDColor, 18))
+            _mdRules = true;
+        if (width >= 760)
+            GUI.Label(new Rect(140, 12, width - 444, 44), "5D шахматы", Theme.Label(24, FiveDColor, TextAnchor.MiddleCenter, display: true));
 
         float statusWidth = Mathf.Min(620, width - 24);
         var status = new Rect((width - statusWidth) / 2, 64, statusWidth, 40);
@@ -540,7 +565,9 @@ public partial class ChessBoardView
             ZoomAt(center, 1.25f);
 
         Theme.InputBlocked = false;
-        if (window)
+        if (_mdRules)
+            DrawFiveDRules(width, height);
+        else if (window)
             DrawResult(width, height);
     }
 
@@ -562,6 +589,10 @@ public partial class ChessBoardView
         string who = _opponent == Opponent.SameDevice ? $"Ход {ColorName(_md.Mover, true)}" : "Ваш ход";
         if (_mdPresentMoved && _md.TurnMoves.Count > 0)
             return _mdCanSubmit ? who + ": можно завершить ход" : "Король под ударом! Отмените ход";
+        if (_mdSelected.HasValue)
+            return _mdTargets.Any(m => !m.IsSpatial)
+                ? "Фиолетовые точки — ходы в прошлое и на другие линии"
+                : "У этой фигуры сейчас нет ходов во времени";
         if (_md.TurnMoves.Count > 0)
             return who + ": походите на остальных досках с рамкой";
         return who + ": ходите на досках с золотой рамкой";
@@ -693,8 +724,30 @@ public partial class ChessBoardView
 
     // ---------------------------------------------------------------- setup
 
+    private void DrawFiveDRules(float width, float height)
+    {
+        Dim(width, height, 0.7f);
+        float cardWidth = Mathf.Min(680, width - 24);
+        float cardHeight = Mathf.Min(640, height - 40);
+        var card = new Rect((width - cardWidth) / 2, (height - cardHeight) / 2, cardWidth, cardHeight);
+        Theme.Card(card, Theme.Darken(FiveDColor, 0.7f), 24);
+        GUI.Label(new Rect(card.x, card.y + 14, card.width, 44), "Правила 5D шахмат", Theme.Label(28, Theme.Gold, TextAnchor.MiddleCenter, display: true));
+
+        var style = Theme.Label(16, Theme.Text, TextAnchor.UpperLeft, wrap: true);
+        style.richText = true;
+        var view = new Rect(card.x + 20, card.y + 66, card.width - 40, card.height - 66 - 84);
+        float textHeight = style.CalcHeight(new GUIContent(FiveDRules), view.width - 24);
+        _mdRulesScroll = GUI.BeginScrollView(view, _mdRulesScroll, new Rect(0, 0, view.width - 24, textHeight));
+        GUI.Label(new Rect(0, 0, view.width - 24, textHeight), FiveDRules, style);
+        GUI.EndScrollView();
+
+        if (Theme.Button(new Rect(card.x + (card.width - 220) / 2, card.yMax - 72, 220, 52), "Понятно", Theme.Green, 20))
+            _mdRules = false;
+    }
+
     private void DrawFiveDSetup(float width, float height)
     {
+        Theme.InputBlocked = _mdRules;
         BackButton();
         bool bot = _fiveOpponent == 0;
         float cardWidth = Mathf.Min(580, width - 32);
@@ -726,7 +779,7 @@ public partial class ChessBoardView
         Theme.Outline(rules, Theme.WithAlpha(FiveDColor, 0.6f), 2, 14);
         string text =
             "•  Все доски партии видны сразу: слева прошлое, справа будущее, ряды — линии времени.\n" +
-            "•  Фигуры ходят не только по доске, но и назад во времени и между линиями. Ладья идёт по одному направлению, слон — по двум, конь — буквой «Г».\n" +
+            "•  Фигура, которая уже сходила, может прыгнуть назад во времени на свою клетку, а ещё ходить в прошлое и между линиями по своим правилам.\n" +
             "•  Ход в прошлое создаёт новую линию времени.\n" +
             "•  Ходите на досках с золотой рамкой, пока фиолетовая полоса «настоящего» не перейдёт к сопернику, и жмите «Завершить ход».\n" +
             "•  Мат — когда любой ваш ход оставляет короля под ударом. Пешки во времени не ходят.";
@@ -734,7 +787,9 @@ public partial class ChessBoardView
             Theme.Label(15, Theme.Text, TextAnchor.MiddleLeft, wrap: true));
         cy += 240;
 
-        if (Theme.Button(new Rect(cx, cy, inner, 62), "ИГРАТЬ", Theme.Green, 26))
+        if (Theme.Button(new Rect(cx, cy, inner / 3 - 6, 62), "Правила", FiveDColor, 20))
+            _mdRules = true;
+        if (Theme.Button(new Rect(cx + inner / 3 + 6, cy, inner * 2 / 3 - 6, 62), "ИГРАТЬ", Theme.Green, 26))
         {
             SaveMenuSettings();
             if (bot)
@@ -749,5 +804,9 @@ public partial class ChessBoardView
             }
             StartFiveD();
         }
+
+        Theme.InputBlocked = false;
+        if (_mdRules)
+            DrawFiveDRules(width, height);
     }
 }
