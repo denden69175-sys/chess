@@ -24,8 +24,9 @@ public enum Opponent
 /// </summary>
 public partial class ChessBoardView : MonoBehaviour
 {
-    private static readonly Color LightSquare = new Color32(238, 216, 182, 255);
-    private static readonly Color DarkSquare = new Color32(178, 132, 96, 255);
+    // The board colours; a board skin from the collection replaces them.
+    private Color LightSquare = new Color32(238, 216, 182, 255);
+    private Color DarkSquare = new Color32(178, 132, 96, 255);
     private static readonly Color LastMoveTint = new Color32(205, 210, 106, 150);
     private static readonly Color SelectedTint = new Color32(130, 151, 105, 170);
     private static readonly Color CheckTint = new Color32(220, 60, 60, 170);
@@ -146,6 +147,8 @@ public partial class ChessBoardView : MonoBehaviour
         LoadPieceSprites();
         BuildBoard();
         LoadMenuSettings();
+        LoadProgress();
+        ApplySkins();
         ShowPage(Page.Home);
     }
 
@@ -217,6 +220,7 @@ public partial class ChessBoardView : MonoBehaviour
                 var rect = new Rect(0, 0, texture.width, texture.height);
                 _pieceSprites[color + type] = Sprite.Create(texture, rect, new Vector2(0.5f, 0.5f), texture.width);
                 _pieceTextures[color + type] = texture;
+                _baseTextures[color + type] = texture;
                 _floatingPieces.Add(texture);
             }
         }
@@ -244,6 +248,7 @@ public partial class ChessBoardView : MonoBehaviour
         frame.drawMode = SpriteDrawMode.Sliced;
         frame.size = new Vector2(8.7f, 8.7f);
         frame.color = new Color32(92, 60, 40, 255);
+        _frame = frame;
 
         var board = new GameObject("Board").transform;
         board.SetParent(_root, false);
@@ -252,6 +257,7 @@ public partial class ChessBoardView : MonoBehaviour
             var square = new Square(i);
             var tile = NewSprite(square.ToString(), board, _squareSprite, 0);
             tile.color = (square.File + square.Rank) % 2 == 0 ? DarkSquare : LightSquare;
+            _tiles[i] = tile;
 
             _overlays[i] = NewSprite("Overlay " + square, tile.transform, _squareSprite, 1);
             _overlays[i].enabled = false;
@@ -501,6 +507,8 @@ public partial class ChessBoardView : MonoBehaviour
             UpdateTeam();
         else if (_page == Page.Three)
             UpdateThree();
+        else if (_page == Page.Puzzle)
+            UpdatePuzzle();
         if (_page != Page.Game)
             return;
 
@@ -522,6 +530,7 @@ public partial class ChessBoardView : MonoBehaviour
         {
             _endShown = true;
             Sfx.Play(PlayerWon == false ? Sfx.Lose : Sfx.Win);
+            ReportBoardGame();
         }
 
         HandlePointer();

@@ -174,6 +174,7 @@ public partial class ChessBoardView
         {
             _endShown = true;
             Sfx.Play(PlayerWon == false ? Sfx.Lose : Sfx.Win);
+            ReportFiveDGame();
         }
     }
 

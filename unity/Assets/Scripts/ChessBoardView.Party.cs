@@ -264,6 +264,7 @@ public partial class ChessBoardView
         {
             _partyEndShown = true;
             Sfx.Play(humanWon == false ? Sfx.Lose : Sfx.Win);
+            ReportPartyGame(humanWon);
         }
     }
 

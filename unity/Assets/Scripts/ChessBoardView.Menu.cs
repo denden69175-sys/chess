@@ -20,6 +20,9 @@ public partial class ChessBoardView
         Team,
         ThreeSetup,
         Three,
+        Rewards,
+        Puzzles,
+        Puzzle,
     }
 
     private static readonly string[] LevelNames = { "Лёгкий", "Средний", "Сложный" };
@@ -134,6 +137,10 @@ public partial class ChessBoardView
         {
             DrawThree(width, height);
         }
+        else if (_page == Page.Puzzle)
+        {
+            DrawPuzzle(width, height);
+        }
         else
         {
             Theme.Background(width, height, _floatingPieces);
@@ -162,6 +169,12 @@ public partial class ChessBoardView
                     break;
                 case Page.ThreeSetup:
                     DrawPartySetup(width, height, true);
+                    break;
+                case Page.Rewards:
+                    DrawRewards(width, height);
+                    break;
+                case Page.Puzzles:
+                    DrawPuzzleList(width, height);
                     break;
             }
             GUI.color = Color.white;
@@ -211,7 +224,7 @@ public partial class ChessBoardView
             Sfx.Enabled = !Sfx.Enabled;
 
         int columns = width >= 780 ? 2 : 1;
-        int count = 9;
+        int count = 10;
         int rows = (count + columns - 1) / columns;
         // Five rows of tiles fit on the screen when they are a little lower.
         float gap = rows >= 5 ? 14 : 18;
@@ -248,8 +261,11 @@ public partial class ChessBoardView
             ShowPage(Page.ThreeSetup);
         if (Tile(Cell(7), "Онлайн", "Найди соперника или позови друга по коду комнаты.", Theme.Teal, "bN", 7))
             ShowPage(Page.Online);
-        if (Tile(Cell(8), "Задания и сундуки", "Выполняй задания и выбивай раскраски для фигур.", Theme.Grey, "bQ", 8, locked: true))
-            ShowToast("Задания и сундуки появятся в следующем обновлении.");
+        int waiting = ClaimableCount() + ChestCount;
+        if (Tile(Cell(8), "Задания и сундуки", "Выполняй задания, открывай сундуки и собирай раскраски.", RewardsColor, "bQ", 8, badge: waiting > 0 ? waiting.ToString() : null))
+            ShowPage(Page.Rewards);
+        if (Tile(Cell(9), "Задачи", "Мат в 1 и в 2 хода. За каждую решённую — монеты.", PuzzleColor, "wK", 9))
+            ShowPage(Page.Puzzles);
 
         if (scroll)
             GUI.EndScrollView();
@@ -257,7 +273,7 @@ public partial class ChessBoardView
             GUI.EndGroup();
     }
 
-    private bool Tile(Rect rect, string title, string text, Color color, string icon, int index, bool locked = false)
+    private bool Tile(Rect rect, string title, string text, Color color, string icon, int index, bool locked = false, string? badge = null)
     {
         bool hover = rect.Contains(Event.current.mousePosition);
         var face = rect;
@@ -280,9 +296,16 @@ public partial class ChessBoardView
 
         if (locked)
         {
-            var badge = new Rect(face.xMax - 86, face.y - 10, 78, 26);
-            Theme.Card(badge, Theme.Gold, 13, raised: false);
-            GUI.Label(badge, "СКОРО", Theme.Label(13, new Color32(60, 40, 0, 255), TextAnchor.MiddleCenter, bold: true));
+            var soon = new Rect(face.xMax - 86, face.y - 10, 78, 26);
+            Theme.Card(soon, Theme.Gold, 13, raised: false);
+            GUI.Label(soon, "СКОРО", Theme.Label(13, new Color32(60, 40, 0, 255), TextAnchor.MiddleCenter, bold: true));
+        }
+        else if (badge != null)
+        {
+            // How many rewards are waiting.
+            var dot = new Rect(face.xMax - 40, face.y - 10, 34, 34);
+            Theme.Card(dot, Theme.Red, 17, raised: false);
+            GUI.Label(dot, badge, Theme.Label(16, Theme.Text, TextAnchor.MiddleCenter, bold: true));
         }
 
         bool clicked = GUI.Button(rect, GUIContent.none, GUIStyle.none);
