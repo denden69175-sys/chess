@@ -16,6 +16,10 @@ public partial class ChessBoardView
         Game,
         FiveDSetup,
         FiveD,
+        TeamSetup,
+        Team,
+        ThreeSetup,
+        Three,
     }
 
     private static readonly string[] LevelNames = { "Лёгкий", "Средний", "Сложный" };
@@ -53,6 +57,8 @@ public partial class ChessBoardView
         }
         if (page != Page.FiveD)
             CancelFiveDBot();
+        if (page != Page.Team && page != Page.Three)
+            CancelPartyBots();
         _page = page;
         _pageShownAt = Time.time;
     }
@@ -111,6 +117,14 @@ public partial class ChessBoardView
         {
             DrawFiveD(width, height);
         }
+        else if (_page == Page.Team)
+        {
+            DrawTeam(width, height);
+        }
+        else if (_page == Page.Three)
+        {
+            DrawThree(width, height);
+        }
         else
         {
             Theme.Background(width, height, _floatingPieces);
@@ -133,6 +147,12 @@ public partial class ChessBoardView
                     break;
                 case Page.FiveDSetup:
                     DrawFiveDSetup(width, height);
+                    break;
+                case Page.TeamSetup:
+                    DrawPartySetup(width, height, false);
+                    break;
+                case Page.ThreeSetup:
+                    DrawPartySetup(width, height, true);
                     break;
             }
             GUI.color = Color.white;
@@ -182,13 +202,14 @@ public partial class ChessBoardView
             Sfx.Enabled = !Sfx.Enabled;
 
         int columns = width >= 780 ? 2 : 1;
-        float gap = 18;
-        float tileWidth = columns == 2 ? Mathf.Min(380, (width - 48 - gap) / 2) : Mathf.Min(480, width - 32);
-        float tileHeight = 112;
-        float gridWidth = columns * tileWidth + (columns - 1) * gap;
-        float top = 156;
-        int count = 7;
+        int count = 9;
         int rows = (count + columns - 1) / columns;
+        // Five rows of tiles fit on the screen when they are a little lower.
+        float gap = rows >= 5 ? 14 : 18;
+        float tileWidth = columns == 2 ? Mathf.Min(380, (width - 48 - gap) / 2) : Mathf.Min(480, width - 32);
+        float tileHeight = rows >= 5 ? 96 : 112;
+        float gridWidth = columns * tileWidth + (columns - 1) * gap;
+        float top = rows >= 5 ? 146 : 156;
         float gridHeight = rows * (tileHeight + gap) + 20;
 
         var view = new Rect(0, top, width, height - top);
@@ -212,9 +233,13 @@ public partial class ChessBoardView
             ShowPage(Page.FiveDSetup);
         if (Tile(Cell(4), "Своя армия", "Собери войско на 39 очков. Хоть четыре ферзя!", Theme.Orange, "wR", 4))
             ShowPage(Page.Army);
-        if (Tile(Cell(5), "Онлайн", "Найди соперника или позови друга по коду комнаты.", Theme.Teal, "bN", 5))
+        if (Tile(Cell(5), "Союзники: 2 на 2", "Команда из двух игроков: один ведёт ферзя, другой — короля.", TeamColor, "wP", 5))
+            ShowPage(Page.TeamSetup);
+        if (Tile(Cell(6), "Тройной трон", "Трое на доске 12×12. Съел короля — забрал его армию.", ThreeColor, "bK", 6))
+            ShowPage(Page.ThreeSetup);
+        if (Tile(Cell(7), "Онлайн", "Найди соперника или позови друга по коду комнаты.", Theme.Teal, "bN", 7))
             ShowPage(Page.Online);
-        if (Tile(Cell(6), "Задания и сундуки", "Выполняй задания и выбивай раскраски для фигур.", Theme.Grey, "bQ", 6, locked: true))
+        if (Tile(Cell(8), "Задания и сундуки", "Выполняй задания и выбивай раскраски для фигур.", Theme.Grey, "bQ", 8, locked: true))
             ShowToast("Задания и сундуки появятся в следующем обновлении.");
 
         if (scroll)

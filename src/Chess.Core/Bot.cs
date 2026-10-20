@@ -97,9 +97,19 @@ namespace Chess.Core
         /// The chosen move and its score in centipawns for the side to move (higher is better).
         /// The time-travel bot compares this score with the scores of its jumps.
         /// </summary>
-        public (Move? Move, int Score) ChooseMoveWithScore(Position position, CancellationToken cancellation = default)
+        public (Move? Move, int Score) ChooseMoveWithScore(Position position, CancellationToken cancellation = default) =>
+            ChooseMoveWithScore(position, null, cancellation);
+
+        /// <summary>
+        /// Like <see cref="ChooseMoveWithScore(Position, CancellationToken)"/>, but the first move must be
+        /// one of <paramref name="allowed"/>, as in the 2 vs 2 mode where a player moves only their own pieces.
+        /// </summary>
+        public (Move? Move, int Score) ChooseMoveWithScore(Position position, IReadOnlyCollection<Move>? allowed, CancellationToken cancellation = default)
         {
-            var moves = Ordered(position, MoveGenerator.GenerateLegal(position));
+            var legal = MoveGenerator.GenerateLegal(position);
+            if (allowed != null)
+                legal = legal.Where(allowed.Contains).ToList();
+            var moves = Ordered(position, legal);
             if (moves.Count == 0)
                 return (null, position.IsInCheck(position.SideToMove) ? -MateScore : 0);
 

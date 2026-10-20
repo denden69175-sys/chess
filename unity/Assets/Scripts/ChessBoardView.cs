@@ -497,6 +497,10 @@ public partial class ChessBoardView : MonoBehaviour
         PollNetwork();
         if (_page == Page.FiveD)
             UpdateFiveD();
+        else if (_page == Page.Team)
+            UpdateTeam();
+        else if (_page == Page.Three)
+            UpdateThree();
         if (_page != Page.Game)
             return;
 
