@@ -173,11 +173,12 @@ public partial class ChessBoardView
     /// <summary>Counts a finished game for the quests and tells the player when one is done.</summary>
     private void ReportGame(GameReport report)
     {
-        int before = ClaimableCount();
+        var before = ClaimableIds();
         Rewards.Record(_progress, report);
         SaveProgress();
-        if (ClaimableCount() > before)
-            ShowToast("Задание выполнено! Награда ждёт в «Задания и сундуки».");
+        // Let the game's result card show first.
+        _celebrateAfter = Time.time + 1.6f;
+        CelebrateNewQuests(before);
     }
 
     private void ReportBoardGame()
@@ -335,7 +336,6 @@ public partial class ChessBoardView
         Theme.InputBlocked = window;
         BackButton();
 
-        GUI.Label(new Rect(width - 260, 16, 244, 46), $"Монеты: {_progress.coins}", Theme.Label(22, Theme.Gold, TextAnchor.MiddleRight, bold: true));
 
         float cardWidth = Mathf.Min(760, width - 24);
         float x = (width - cardWidth) / 2;

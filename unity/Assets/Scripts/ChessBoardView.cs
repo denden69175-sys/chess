@@ -501,6 +501,7 @@ public partial class ChessBoardView : MonoBehaviour
     private void Update()
     {
         PollNetwork();
+        UpdateCelebration();
         if (_page == Page.FiveD)
             UpdateFiveD();
         else if (_page == Page.Team)
@@ -573,7 +574,7 @@ public partial class ChessBoardView : MonoBehaviour
 
     private void HandlePointer()
     {
-        if (!PlayerMayMove || Time.unscaledTime - Theme.LastClickTime < 0.25f)
+        if (!PlayerMayMove || CelebrationVisible || Time.unscaledTime - Theme.LastClickTime < 0.25f)
             return;
 
         var mover = _game.Current.SideToMove;

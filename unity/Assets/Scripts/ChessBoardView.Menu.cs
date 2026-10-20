@@ -120,6 +120,7 @@ public partial class ChessBoardView
         GUI.matrix = Matrix4x4.Scale(new Vector3(scale, scale, 1));
         float width = Screen.width / scale;
         float height = Screen.height / scale;
+        CelebrationInput(width, height);
 
         if (_page == Page.Game)
         {
@@ -181,6 +182,8 @@ public partial class ChessBoardView
         }
 
         DrawToast(width, height);
+        DrawCoins(width, height);
+        DrawCelebration(width, height);
     }
 
     private void DrawToast(float width, float height)

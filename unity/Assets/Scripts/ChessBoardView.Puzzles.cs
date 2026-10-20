@@ -32,7 +32,6 @@ public partial class ChessBoardView
     private void DrawPuzzleList(float width, float height)
     {
         BackButton();
-        GUI.Label(new Rect(width - 260, 16, 244, 46), $"Монеты: {_progress.coins}", Theme.Label(22, Theme.Gold, TextAnchor.MiddleRight, bold: true));
 
         float cardWidth = Mathf.Min(760, width - 24);
         float x = (width - cardWidth) / 2;
@@ -139,13 +138,13 @@ public partial class ChessBoardView
         if (MateSolver.IsCheckmate(_pzPosition))
         {
             _pzSolved = true;
-            int before = ClaimableCount();
+            var before = ClaimableIds();
             int coins = Rewards.RecordPuzzle(_progress, _puzzle);
             SaveProgress();
             _pzNote = coins > 0 ? $"Мат! Задача решена: +{coins} монет." : "Мат! Задача решена.";
-            if (ClaimableCount() > before)
-                _pzNote += " Задание выполнено!";
-            Sfx.Play(Sfx.Win);
+            _celebrateAfter = Time.time + 0.6f;
+            CelebratePuzzle(_puzzle, coins);
+            CelebrateNewQuests(before);
             return;
         }
         _pzMovesLeft--;
