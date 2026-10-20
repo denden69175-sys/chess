@@ -263,11 +263,19 @@ public partial class ChessBoardView
     {
         if (!_baseTextures.TryGetValue(key, out var source))
             return Texture2D.whiteTexture;
-        if (!PieceStyles.TryGetValue(skin, out var style))
-            return source;
         string cacheKey = skin + "/" + key;
         if (_skinTextures.TryGetValue(cacheKey, out var cached))
             return cached;
+        // A drawn set in Resources/Skins/<skin>/ (wK.png ... bP.png) wins over recolouring.
+        var drawn = Resources.Load<Texture2D>("Skins/" + skin + "/" + key);
+        if (drawn != null)
+        {
+            drawn.filterMode = FilterMode.Bilinear;
+            _skinTextures[cacheKey] = drawn;
+            return drawn;
+        }
+        if (!PieceStyles.TryGetValue(skin, out var style))
+            return source;
 
         var texture = Readable(source);
         var pixels = texture.GetPixels();
