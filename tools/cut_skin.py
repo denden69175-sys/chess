@@ -19,6 +19,10 @@ mx, mn = im.max(2), im.min(2)
 lum = im.mean(2)
 grey = (mx - mn) < 18
 bgcand = grey & (mn > 200)
+# Close small gaps in the dark outline so the fill cannot leak into a white piece.
+from scipy.ndimage import binary_dilation as _dil
+barrier = _dil(lum < 90, iterations=3)
+bgcand = bgcand & ~barrier
 # Flood fill background from the borders.
 bg = np.zeros((h, w), bool)
 q = deque()
@@ -34,6 +38,10 @@ while q:
         ny, nx = y+dy, x+dx
         if 0 <= ny < h and 0 <= nx < w and not bg[ny, nx] and bgcand[ny, nx]:
             bg[ny, nx] = True; q.append((ny, nx))
+# Give back the background strip the barrier covered, without crossing the outline gaps again.
+grow = (grey & (mn > 200)) & barrier
+for _ in range(4):
+    bg = bg | (_dil(bg) & grow)
 alpha = np.where(bg, 0, 255).astype(np.float32)
 rgb = im.astype(np.float32).copy()
 # Soft edge: grey pixels next to the background fade out and turn black (the outline colour).
