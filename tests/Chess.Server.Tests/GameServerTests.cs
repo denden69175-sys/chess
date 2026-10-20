@@ -10,6 +10,7 @@ public class GameServerTests
     {
         public FakePlayer(string name) => Name = name;
         public string Name { get; set; }
+        public string? Id { get; set; }
         public List<Message> Inbox { get; } = new();
         public void Send(Message message) => Inbox.Add(message);
         public Message Last(string type) => Inbox.Last(m => m.type == type);
@@ -261,5 +262,113 @@ public class GameServerTests
 
         server.Handle(seats[2], new Message { type = "resign" });
         Assert.Equal("seat0", seats[0].Last("end").result);
+    }
+
+    private static FakePlayer Known(GameServer server, string name)
+    {
+        var player = new FakePlayer(name);
+        server.Handle(player, new Message { type = "hello", name = name, id = "id-" + name + "-0000" });
+        return player;
+    }
+
+    [Fact]
+    public void HelloSendsTheStartingRating()
+    {
+        var server = new GameServer();
+        var a = Known(server, "Аня");
+        Assert.Equal(Ratings.Start, a.Last("rating").rating);
+        Assert.Equal(0, a.Last("rating").games);
+    }
+
+    [Fact]
+    public void QuickMatchWinMovesTheRatingUpAndTheLossDown()
+    {
+        var server = new GameServer(new Random(1));
+        var a = Known(server, "Аня");
+        var b = Known(server, "Боря");
+        server.Handle(a, new Message { type = "find", mode = Modes.Classic });
+        server.Handle(b, new Message { type = "find", mode = Modes.Classic });
+        Assert.True(a.Last("start").rated);
+        var black = a.Last("start").color == "black" ? a : b;
+        var white = black == a ? b : a;
+        server.Handle(black, new Message { type = "resign" });
+
+        Assert.Equal(16, white.Last("end").delta);
+        Assert.Equal(1016, white.Last("end").rating);
+        Assert.Equal(-16, black.Last("end").delta);
+        Assert.Equal(984, black.Last("end").rating);
+
+        server.Handle(white, new Message { type = "top" });
+        var lines = white.Last("top").list!.Split('\n');
+        Assert.StartsWith(white.Name + "\t1016", lines[0]);
+        Assert.StartsWith(black.Name + "\t984", lines[1]);
+    }
+
+    [Fact]
+    public void RoomGamesAndPlayersWithoutIdAreNotRated()
+    {
+        var server = new GameServer(new Random(3));
+        var host = Known(server, "host");
+        var guest = Known(server, "guest");
+        server.Handle(host, new Message { type = "create", mode = Modes.Classic });
+        server.Handle(guest, new Message { type = "join", code = host.Last("room").code });
+        Assert.False(host.Last("start").rated);
+        server.Handle(host, new Message { type = "resign" });
+        Assert.Null(guest.Last("end").delta);
+
+        var anonymous = new FakePlayer("x");
+        server.Handle(anonymous, new Message { type = "find", mode = Modes.Classic });
+        server.Handle(host, new Message { type = "find", mode = Modes.Classic });
+        Assert.False(host.Last("start").rated);
+    }
+
+    [Fact]
+    public void TeamAndThreeGamesAreRatedForEveryone()
+    {
+        var server = new GameServer(new Random(5));
+        var team = Enumerable.Range(0, 4).Select(i => Known(server, "t" + i)).ToArray();
+        foreach (var p in team)
+            server.Handle(p, new Message { type = "find", mode = Modes.Team });
+        var bySeat = team.OrderBy(p => p.Last("start").seat).ToArray();
+        server.Handle(bySeat[1], new Message { type = "resign" });
+        Assert.Equal(16, bySeat[0].Last("end").delta);
+        Assert.Equal(16, bySeat[2].Last("end").delta);
+        Assert.Equal(-16, bySeat[1].Last("end").delta);
+        Assert.Equal(-16, bySeat[3].Last("end").delta);
+
+        var three = Enumerable.Range(0, 3).Select(i => Known(server, "r" + i)).ToArray();
+        foreach (var p in three)
+            server.Handle(p, new Message { type = "find", mode = Modes.Three });
+        var seats = three.OrderBy(p => p.Last("start").seat).ToArray();
+        server.Handle(seats[1], new Message { type = "resign" });
+        server.Handle(seats[2], new Message { type = "resign" });
+        Assert.Equal(16, seats[0].Last("end").delta);
+        // The first to leave gets no "end", but the rating still counts the loss.
+        server.Handle(seats[1], new Message { type = "hello", name = "r1", id = "id-r1-0000" });
+        Assert.Equal(992, seats[1].Last("rating").rating);
+    }
+
+    [Fact]
+    public void RatingsSurviveARestart()
+    {
+        string path = Path.Combine(Path.GetTempPath(), "ratings-" + Guid.NewGuid() + ".json");
+        try
+        {
+            var server = new GameServer(new Random(1), new Ratings(path));
+            var a = Known(server, "Аня");
+            var b = Known(server, "Боря");
+            server.Handle(a, new Message { type = "find", mode = Modes.Classic });
+            server.Handle(b, new Message { type = "find", mode = Modes.Classic });
+            server.Handle(a, new Message { type = "resign" });
+
+            var again = new GameServer(null, new Ratings(path));
+            var a2 = Known(again, "Аня");
+            Assert.Equal(984, a2.Last("rating").rating);
+            Assert.Equal(1, a2.Last("rating").games);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
     }
 }

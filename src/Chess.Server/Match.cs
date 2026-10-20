@@ -53,6 +53,9 @@ public sealed class Match
     public Army? BlackArmy { get; }
     public bool Finished { get; set; }
 
+    /// <summary>The game counts for the rating (quick match, every player known by id).</summary>
+    public bool Rated { get; init; }
+
     public int SeatOf(IPlayer player) => _seats.IndexOf(player);
 
     /// <summary>The seat whose turn it is.</summary>

@@ -21,6 +21,7 @@ public sealed class SocketPlayer : IPlayer
     }
 
     public string Name { get; set; } = "Игрок";
+    public string? Id { get; set; }
 
     public void Send(Message message) => _outgoing.Writer.TryWrite(message.ToJson());
 

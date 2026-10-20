@@ -20,3 +20,4 @@ unity/.vs/
 
 # Built server
 server-build/
+ratings.json

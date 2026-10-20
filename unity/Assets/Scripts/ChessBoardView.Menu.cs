@@ -61,6 +61,8 @@ public partial class ChessBoardView
             CancelPartyBots();
         _page = page;
         _pageShownAt = Time.time;
+        if (page == Page.Online)
+            RefreshOnlineInfo();
     }
 
     private void ShowToast(string text)
@@ -75,6 +77,13 @@ public partial class ChessBoardView
         _menuColor = Mathf.Clamp(PlayerPrefs.GetInt("color", 0), 0, 2);
         _playerName = PlayerPrefs.GetString("name", "Игрок " + Random.Range(100, 1000));
         _serverUrl = PlayerPrefs.GetString("server", DefaultServer);
+        // The server keeps the rating under this id, so it stays with this copy of the game.
+        _playerId = PlayerPrefs.GetString("playerId", "");
+        if (_playerId.Length == 0)
+        {
+            _playerId = System.Guid.NewGuid().ToString("N");
+            PlayerPrefs.SetString("playerId", _playerId);
+        }
         var army = Army.FromCode(PlayerPrefs.GetString("army", ""));
         SetEditArmy(army != null && army.Pieces.Count > 0 ? army : Army.Classic);
     }

@@ -10,8 +10,8 @@ namespace Chess.Server;
 /// </summary>
 public sealed class Message
 {
-    // Client to server: hello, find, create, join, cancel, move, resign, ping.
-    // Server to client: welcome, waiting, room, start, move, out, end, error, pong.
+    // Client to server: hello, top, find, create, join, cancel, move, resign, ping.
+    // Server to client: welcome, rating, top, waiting, room, start, move, out, end, error, pong.
     public string type { get; set; } = "";
 
     /// <summary>Player name (hello) or the opponent's name (start).</summary>
@@ -53,6 +53,23 @@ public sealed class Message
 
     /// <summary>Why the game ended: checkmate, stalemate, resign, opponent_left, draw rules.</summary>
     public string? reason { get; set; }
+
+    /// <summary>The id the client keeps between launches (hello); the rating is stored under it.</summary>
+    public string? id { get; set; }
+
+    /// <summary>The player's rating, games and wins (rating, and end of a rated game).</summary>
+    public int? rating { get; set; }
+    public int? games { get; set; }
+    public int? wins { get; set; }
+
+    /// <summary>How much the rating changed in the game that just ended (end).</summary>
+    public int? delta { get; set; }
+
+    /// <summary>The game counts for the rating (start).</summary>
+    public bool? rated { get; set; }
+
+    /// <summary>The best players (top): one per line, "name\trating\tgames\twins".</summary>
+    public string? list { get; set; }
 
     /// <summary>Human-readable text for errors, in Russian.</summary>
     public string? message { get; set; }

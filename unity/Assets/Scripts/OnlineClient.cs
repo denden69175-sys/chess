@@ -27,6 +27,13 @@ public class NetMessage
     public string result = "";
     public string reason = "";
     public string message = "";
+    public string id = "";
+    public int rating;
+    public int games;
+    public int wins;
+    public int delta;
+    public bool rated;
+    public string list = "";
     public int seat;
     public string names = "";
     public int count;

@@ -10,7 +10,9 @@ string port = Environment.GetEnvironmentVariable("PORT") ?? "5080";
 if (Environment.GetEnvironmentVariable("ASPNETCORE_URLS") == null)
     builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
-builder.Services.AddSingleton<GameServer>();
+// Ratings are kept in ratings.json next to the server unless RATINGS_FILE names another file.
+string ratingsFile = Environment.GetEnvironmentVariable("RATINGS_FILE") ?? Path.Combine(AppContext.BaseDirectory, "ratings.json");
+builder.Services.AddSingleton(new GameServer(null, new Ratings(ratingsFile)));
 var app = builder.Build();
 
 app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(20) });

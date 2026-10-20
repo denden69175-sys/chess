@@ -248,6 +248,8 @@ public partial class ChessBoardView
         }
         if (Theme.Button(new Rect(card.x + 40 + buttonWidth, card.y + 150, buttonWidth, 54), "В меню", Theme.Blue, 19))
             LeaveParty(Page.Home);
+        if (_partyOnline && _ratingNote.Length > 0)
+            GUI.Label(new Rect(card.x, card.y + 206, card.width, 24), _ratingNote, Theme.Label(17, Theme.Gold, TextAnchor.MiddleCenter, bold: true));
         if (GUI.Button(new Rect(card.x, card.yMax - 70, card.width, 40), "Посмотреть доску", Theme.Label(16, Theme.Muted, TextAnchor.MiddleCenter, bold: true)))
         {
             Theme.ClickTaken();

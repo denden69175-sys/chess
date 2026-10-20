@@ -6,6 +6,9 @@ namespace Chess.Server;
 public interface IPlayer
 {
     string Name { get; set; }
+
+    /// <summary>The id the client keeps between launches, for the rating; null until it says hello.</summary>
+    string? Id { get; set; }
     void Send(Message message);
 }
 
@@ -20,10 +23,12 @@ public sealed class GameServer
     private readonly Dictionary<string, Lobby> _rooms = new();
     private readonly Dictionary<IPlayer, Match> _matches = new();
     private readonly Random _random;
+    private readonly Ratings _ratings;
 
-    public GameServer(Random? random = null)
+    public GameServer(Random? random = null, Ratings? ratings = null)
     {
         _random = random ?? new Random();
+        _ratings = ratings ?? new Ratings();
     }
 
     private sealed record Waiting(IPlayer Player, Army? Army);
@@ -54,7 +59,10 @@ public sealed class GameServer
             switch (message.type)
             {
                 case "hello":
-                    player.Name = Clean(message.name);
+                    Hello(player, message);
+                    break;
+                case "top":
+                    SendTop(player);
                     break;
                 case "find":
                     Find(player, message);
@@ -91,6 +99,68 @@ public sealed class GameServer
             RemoveWaiting(player);
             Leave(player, "opponent_left");
         }
+    }
+
+    // ---------------------------------------------------------------- rating
+
+    private void Hello(IPlayer player, Message message)
+    {
+        player.Name = Clean(message.name);
+        string id = (message.id ?? "").Trim();
+        if (id.Length < 8 || id.Length > 64 || !id.All(c => char.IsLetterOrDigit(c) || c == '-'))
+            return;
+        player.Id = id;
+        SendRating(player, _ratings.Get(id, player.Name));
+    }
+
+    private static void SendRating(IPlayer player, RatingRecord record) =>
+        player.Send(new Message { type = "rating", rating = record.Rating, games = record.Games, wins = record.Wins });
+
+    /// <summary>The ten best players, one per line: name, rating, games, wins, separated by tabs.</summary>
+    private void SendTop(IPlayer player)
+    {
+        var lines = _ratings.Top(10).Select(r => $"{r.Name}\t{r.Rating}\t{r.Games}\t{r.Wins}");
+        player.Send(new Message { type = "top", list = string.Join("\n", lines) });
+    }
+
+    /// <summary>
+    /// Quick-match games count for the rating; games in a private room do not, so friends cannot
+    /// trade points. Everyone needs an id, and one person may not sit in two seats.
+    /// </summary>
+    private static bool IsRated(Lobby lobby) =>
+        lobby.Code == null
+        && lobby.Members.All(m => m.Player.Id != null)
+        && lobby.Members.Select(m => m.Player.Id).Distinct().Count() == lobby.Members.Count;
+
+    /// <summary>Each seat's rating change for the finished match, or null for an unrated one.</summary>
+    private int[]? Rate(Match match)
+    {
+        if (!match.Rated)
+            return null;
+        int n = match.Players.Count;
+        var ids = match.Players.Select(p => p.Id!).ToList();
+        var ratings = ids.Select(id => (double)_ratings.Get(id).Rating).ToList();
+        string result = match.Result;
+        bool three = match.Mode == Modes.Three;
+        var scores = new double?[n, n];
+        var strength = new double[n];
+        for (int i = 0; i < n; i++)
+        {
+            // In team games a player is judged by the team's average rating.
+            strength[i] = three ? ratings[i] : Enumerable.Range(0, n).Where(j => j % 2 == i % 2).Average(j => ratings[j]);
+            for (int j = 0; j < n; j++)
+            {
+                if (i == j || (!three && i % 2 == j % 2))
+                    continue;
+                if (result == "draw")
+                    scores[i, j] = 0.5;
+                else if (three)
+                    scores[i, j] = result == "seat" + i ? 1 : result == "seat" + j ? 0 : 0.5;
+                else
+                    scores[i, j] = result == (i % 2 == 0 ? "white" : "black") ? 1 : 0;
+            }
+        }
+        return _ratings.Apply(ids, scores, strength);
     }
 
     // ---------------------------------------------------------------- matchmaking
@@ -232,7 +302,7 @@ public sealed class GameServer
 
         var white = seats[0];
         var black = seats[1];
-        var match = new Match(lobby.Mode, seats.Select(s => s.Player).ToList(), white.Army, black.Army);
+        var match = new Match(lobby.Mode, seats.Select(s => s.Player).ToList(), white.Army, black.Army) { Rated = IsRated(lobby) };
         foreach (var seat in seats)
             _matches[seat.Player] = match;
 
@@ -248,6 +318,7 @@ public sealed class GameServer
                 // In two-player modes "name" is the opponent; "names" lists every seat in order.
                 name = seats.Count == 2 ? seats[1 - i].Player.Name : null,
                 names = names,
+                rated = match.Rated,
                 whiteArmy = white.Army?.ToCode(),
                 blackArmy = black.Army?.ToCode(),
             });
@@ -313,7 +384,23 @@ public sealed class GameServer
         if (match.Finished)
             return;
         match.Finished = true;
-        Broadcast(match, new Message { type = "end", result = match.Result, reason = reason });
+        var deltas = Rate(match);
+        for (int seat = 0; seat < match.Players.Count; seat++)
+        {
+            var player = match.Players[seat];
+            if (!_matches.TryGetValue(player, out var current) || current != match)
+                continue;
+            var end = new Message { type = "end", result = match.Result, reason = reason };
+            if (deltas != null)
+            {
+                var record = _ratings.Get(player.Id!);
+                end.rating = record.Rating;
+                end.delta = deltas[seat];
+                end.games = record.Games;
+                end.wins = record.Wins;
+            }
+            player.Send(end);
+        }
         foreach (var player in match.Players)
             if (_matches.TryGetValue(player, out var current) && current == match)
                 _matches.Remove(player);
@@ -324,7 +411,7 @@ public sealed class GameServer
 
     private static string Clean(string? name)
     {
-        string trimmed = (name ?? "").Trim();
+        string trimmed = new string((name ?? "").Where(c => !char.IsControl(c)).ToArray()).Trim();
         if (trimmed.Length == 0)
             return "Игрок";
         return trimmed.Length > 20 ? trimmed.Substring(0, 20) : trimmed;

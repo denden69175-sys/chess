@@ -27,6 +27,16 @@ public partial class ChessBoardView
     private string _serverUrl = DefaultServer;
     private bool _showServer;
     private int _onlineMode;
+    private string _playerId = "";
+    private bool _wantInfo;
+    private int? _myRating;
+    private int _myGames;
+    private int _myWins;
+    private readonly System.Collections.Generic.List<(string Name, int Rating, int Games, int Wins)> _top =
+        new System.Collections.Generic.List<(string, int, int, int)>();
+    private bool _showTop;
+    private bool _gameRated;
+    private string _ratingNote = "";
     private int _lobbyCount = 1;
     private int _lobbyNeeded = 2;
     private string _lobbyNames = "";
@@ -70,12 +80,45 @@ public partial class ChessBoardView
     {
         if (_net == null)
             return;
-        _net.Send(new NetMessage { type = "hello", name = _playerName });
+        _net.Send(new NetMessage { type = "hello", name = _playerName, id = _playerId });
         if (_pendingRequest != null)
         {
             _net.Send(_pendingRequest);
             _pendingRequest = null;
         }
+        if (_wantInfo)
+        {
+            _net.Send(new NetMessage { type = "top" });
+            _wantInfo = false;
+        }
+    }
+
+    /// <summary>
+    /// Asks the server for our rating and the best players, connecting quietly if needed: a server
+    /// that is not running only leaves the rating line empty.
+    /// </summary>
+    private void RefreshOnlineInfo()
+    {
+        _wantInfo = true;
+        if (_net != null && _net.Url != _serverUrl.Trim() && _netState == NetState.Idle)
+        {
+            _net.Dispose();
+            _net = null;
+        }
+        if (_net == null)
+        {
+            try
+            {
+                _net = new OnlineClient(_serverUrl.Trim());
+            }
+            catch (System.Exception)
+            {
+                _wantInfo = false;
+            }
+            return;
+        }
+        if (_net.IsOpen)
+            SendPending();
     }
 
     private void SendAction(string action)
@@ -112,6 +155,18 @@ public partial class ChessBoardView
             case "welcome":
                 SendPending();
                 break;
+            case "rating":
+                SetRating(message);
+                break;
+            case "top":
+                _top.Clear();
+                foreach (var line in message.list.Split('\n'))
+                {
+                    var parts = line.Split('\t');
+                    if (parts.Length == 4 && int.TryParse(parts[1], out int rating) && int.TryParse(parts[2], out int games) && int.TryParse(parts[3], out int wins))
+                        _top.Add((parts[0], rating, games, wins));
+                }
+                break;
             case "waiting":
                 _netState = NetState.Searching;
                 SetLobby(message);
@@ -123,6 +178,8 @@ public partial class ChessBoardView
                 break;
             case "start":
                 StartOnlineGame(message);
+                if (_gameRated)
+                    ShowToast(_toast + "\nПартия на рейтинг.");
                 break;
             case "move":
                 _waitingForServer = false;
@@ -138,6 +195,11 @@ public partial class ChessBoardView
                     PartyPlayerOut(message.seat);
                 break;
             case "end":
+                if (message.games > 0)
+                {
+                    SetRating(message);
+                    _ratingNote = $"Рейтинг: {message.rating} ({(message.delta >= 0 ? "+" : "")}{message.delta})";
+                }
                 if ((_page == Page.Team || _page == Page.Three) && _partyOnline)
                     EndPartyOnline(message.result, message.reason);
                 else
@@ -166,6 +228,13 @@ public partial class ChessBoardView
         }
     }
 
+    private void SetRating(NetMessage message)
+    {
+        _myRating = message.rating;
+        _myGames = message.games;
+        _myWins = message.wins;
+    }
+
     private void SetLobby(NetMessage message)
     {
         _lobbyCount = message.count > 0 ? message.count : 1;
@@ -176,6 +245,8 @@ public partial class ChessBoardView
     private void StartOnlineGame(NetMessage message)
     {
         _netState = NetState.Idle;
+        _gameRated = message.rated;
+        _ratingNote = "";
         if (message.mode == "team" || message.mode == "three")
         {
             StartPartyOnline(message);
@@ -216,7 +287,7 @@ public partial class ChessBoardView
     private void DrawOnline(float width, float height)
     {
         bool waiting = _netState != NetState.Idle;
-        Theme.InputBlocked = waiting;
+        Theme.InputBlocked = waiting || _showTop;
         if (BackButton())
         {
             Theme.InputBlocked = false;
@@ -227,7 +298,7 @@ public partial class ChessBoardView
         float cardWidth = Mathf.Min(580, width - 24);
         float inner = cardWidth - 48;
         bool army = _onlineMode == 1;
-        float cardHeight = 470 + (army ? 44 : 0) + (_showServer ? 50 : 0);
+        float cardHeight = 470 + 46 + 24 + (army ? 44 : 0) + (_showServer ? 50 : 0);
         float x = (width - cardWidth) / 2;
         float y = Mathf.Max(74, (height - cardHeight) / 2);
         Theme.PanelBox(new Rect(x, y, cardWidth, cardHeight), 24);
@@ -248,6 +319,17 @@ public partial class ChessBoardView
         }
         cy += 80;
 
+        string ratingText = _myRating.HasValue
+            ? $"Рейтинг: {_myRating}   ·   игр {_myGames}, побед {_myWins}"
+            : "Рейтинг появится, когда сервер будет на связи";
+        GUI.Label(new Rect(cx, cy, inner - 190, 36), ratingText, Theme.Label(_myRating.HasValue ? 17 : 14, _myRating.HasValue ? Theme.Gold : Theme.Muted, bold: _myRating.HasValue, wrap: true));
+        if (Theme.Button(new Rect(cx + inner - 180, cy, 180, 36), "Лучшие игроки", Theme.Purple, 15))
+        {
+            _showTop = true;
+            RefreshOnlineInfo();
+        }
+        cy += 46;
+
         GUI.Label(new Rect(cx, cy, inner, 22), "Режим", Theme.Label(16, Theme.Muted, bold: true));
         _onlineMode = Theme.Pills(new Rect(cx, cy + 24, inner, 44), _onlineMode, OnlineModeNames, Theme.Teal, inner < 520 ? 13 : 15);
         cy += 80;
@@ -265,7 +347,9 @@ public partial class ChessBoardView
         bool party = OnlineModeCodes[_onlineMode] == "team" || OnlineModeCodes[_onlineMode] == "three";
         if (Theme.Button(new Rect(cx, cy, inner, 60), party ? "НАЙТИ ИГРОКОВ" : "НАЙТИ СОПЕРНИКА", Theme.Green, 22))
             StartRequest("find");
-        cy += 74;
+        GUI.Label(new Rect(cx, cy + 62, inner, 20), "Случайные соперники, игра на рейтинг. В комнатах с друзьями рейтинг не меняется.",
+            Theme.Label(13, Theme.Muted, TextAnchor.MiddleCenter));
+        cy += 74 + 24;
 
         if (Theme.Button(new Rect(cx, cy, inner / 2 - 6, 50), "Создать комнату", Theme.Blue, 17))
             StartRequest("create");
@@ -290,6 +374,46 @@ public partial class ChessBoardView
         Theme.InputBlocked = false;
         if (waiting)
             DrawWaiting(width, height);
+        else if (_showTop)
+            DrawTop(width, height);
+    }
+
+    private void DrawTop(float width, float height)
+    {
+        Dim(width, height, 0.7f);
+        float cardWidth = Mathf.Min(520, width - 24);
+        float cardHeight = Mathf.Min(560, height - 40);
+        var card = new Rect((width - cardWidth) / 2, (height - cardHeight) / 2, cardWidth, cardHeight);
+        Theme.Card(card, Theme.Darken(Theme.Purple, 0.6f), 24);
+        GUI.Label(new Rect(card.x, card.y + 14, card.width, 44), "Лучшие игроки", Theme.Label(28, Theme.Gold, TextAnchor.MiddleCenter, display: true));
+
+        float x = card.x + 24;
+        float w = card.width - 48;
+        float y = card.y + 70;
+        if (_top.Count == 0)
+        {
+            string empty = _net != null && _net.IsOpen ? "Пока никто не сыграл на рейтинг." : "Сервер не на связи.";
+            GUI.Label(new Rect(x, y, w, 60), empty, Theme.Label(18, Theme.Muted, TextAnchor.MiddleCenter, wrap: true));
+        }
+        float row = Mathf.Min(36, (card.yMax - 150 - y) / 10);
+        for (int i = 0; i < _top.Count; i++)
+        {
+            var entry = _top[i];
+            var rect = new Rect(x, y + i * row, w, row - 4);
+            Theme.Fill(rect, Theme.WithAlpha(i == 0 ? Theme.Gold : Theme.PanelLight, i == 0 ? 0.25f : 0.5f), 10);
+            var style = Theme.Label(16, Theme.Text, TextAnchor.MiddleLeft, bold: i < 3);
+            GUI.Label(new Rect(rect.x + 10, rect.y, 34, rect.height), (i + 1) + ".", style);
+            GUI.Label(new Rect(rect.x + 44, rect.y, rect.width - 220, rect.height), entry.Name, style);
+            GUI.Label(new Rect(rect.xMax - 170, rect.y, 70, rect.height), entry.Rating.ToString(), Theme.Label(17, Theme.Gold, TextAnchor.MiddleRight, bold: true));
+            GUI.Label(new Rect(rect.xMax - 95, rect.y, 88, rect.height), $"{entry.Wins}/{entry.Games}", Theme.Label(14, Theme.Muted, TextAnchor.MiddleRight));
+        }
+        if (_top.Count > 0)
+            GUI.Label(new Rect(x, card.yMax - 132, w, 22), "справа: победы / игры", Theme.Label(13, Theme.Muted, TextAnchor.MiddleRight));
+        if (_myRating.HasValue)
+            GUI.Label(new Rect(x, card.yMax - 108, w, 26), $"Ваш рейтинг: {_myRating}", Theme.Label(18, Theme.Text, TextAnchor.MiddleCenter, bold: true));
+
+        if (Theme.Button(new Rect(card.x + (card.width - 200) / 2, card.yMax - 72, 200, 52), "Закрыть", Theme.Green, 19))
+            _showTop = false;
     }
 
     private void StartRequest(string type)
