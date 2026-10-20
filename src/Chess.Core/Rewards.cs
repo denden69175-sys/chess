@@ -224,6 +224,8 @@ namespace Chess.Core
         public int[] totals = new int[Enum.GetValues(typeof(Goal)).Length];
         public List<string> modes = new List<string>();
         public List<int> solved = new List<int>();
+        /// <summary>One entry per hint taken on a puzzle not solved yet, by puzzle number.</summary>
+        public List<int> hints = new List<int>();
         public string questDay = "";
         public List<QuestState> daily = new List<QuestState>();
         public List<string> achievements = new List<string>();
@@ -372,11 +374,30 @@ namespace Chess.Core
         {
             if (progress.solved.Contains(puzzle.Number))
                 return 0;
+            int coins = PuzzleCoins(progress, puzzle);
             progress.solved.Add(puzzle.Number);
-            progress.coins += puzzle.Reward;
+            progress.hints.RemoveAll(n => n == puzzle.Number);
+            progress.coins += coins;
             Add(progress, Goal.Puzzles, 1);
-            return puzzle.Reward;
+            return coins;
         }
+
+        /// <summary>Hints taken on a puzzle so far. They are kept across restarts until it is solved.</summary>
+        public static int HintsUsed(PlayerProgress progress, Puzzle puzzle) =>
+            (progress.hints ?? new List<int>()).Count(n => n == puzzle.Number);
+
+        /// <summary>Counts a hint; each one takes a third off the puzzle's coins. Hints on solved puzzles are free.</summary>
+        public static void UseHint(PlayerProgress progress, Puzzle puzzle)
+        {
+            if (progress.solved.Contains(puzzle.Number))
+                return;
+            progress.hints ??= new List<int>();
+            progress.hints.Add(puzzle.Number);
+        }
+
+        /// <summary>Coins the first solve would pay now: the full reward less a third per hint, never below zero.</summary>
+        public static int PuzzleCoins(PlayerProgress progress, Puzzle puzzle) =>
+            puzzle.Reward * Math.Max(0, 3 - HintsUsed(progress, puzzle)) / 3;
 
         private static void Add(PlayerProgress progress, Goal goal, int amount)
         {

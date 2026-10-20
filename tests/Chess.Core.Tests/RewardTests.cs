@@ -82,6 +82,26 @@ public class RewardTests
     }
 
     [Fact]
+    public void EachHintTakesAThirdOffThePuzzleCoins()
+    {
+        var progress = new PlayerProgress();
+        var puzzle = PuzzleBook.All.First(p => p.MateIn == 2);
+        Assert.Equal(30, Rewards.PuzzleCoins(progress, puzzle));
+        Rewards.UseHint(progress, puzzle);
+        Assert.Equal(20, Rewards.PuzzleCoins(progress, puzzle));
+        Rewards.UseHint(progress, puzzle);
+        Assert.Equal(10, Rewards.PuzzleCoins(progress, puzzle));
+        Rewards.UseHint(progress, puzzle);
+        Rewards.UseHint(progress, puzzle);
+        Assert.Equal(0, Rewards.PuzzleCoins(progress, puzzle));
+
+        var easy = PuzzleBook.All.First(p => p.MateIn == 1);
+        Rewards.UseHint(progress, easy);
+        Assert.Equal(10, Rewards.RecordPuzzle(progress, easy));
+        Assert.Equal(0, Rewards.HintsUsed(progress, easy));
+    }
+
+    [Fact]
     public void ChestsGiveNewSkinsAndTheThirtiethIsLegendary()
     {
         var progress = new PlayerProgress();

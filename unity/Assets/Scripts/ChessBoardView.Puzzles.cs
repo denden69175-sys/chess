@@ -21,6 +21,7 @@ public partial class ChessBoardView
     private Move? _pzLast;
     private Square? _pzWrong;
     private float _pzWrongAt = -100;
+    private float _pzInfoAt = -100;
     private float _pzReplyAt = -1;
     private bool _pzSolved;
     private bool _pzHint;
@@ -92,6 +93,7 @@ public partial class ChessBoardView
         _pzSolved = false;
         _pzHint = false;
         _pzNote = "";
+        _pzInfoAt = -100;
         ShowPage(Page.Puzzle);
         Sfx.Play(Sfx.Start);
     }
@@ -139,11 +141,12 @@ public partial class ChessBoardView
         {
             _pzSolved = true;
             var before = ClaimableIds();
+            bool firstSolve = !_progress.solved.Contains(_puzzle.Number);
             int coins = Rewards.RecordPuzzle(_progress, _puzzle);
             SaveProgress();
-            _pzNote = coins > 0 ? $"Мат! Задача решена: +{coins} монет." : "Мат! Задача решена.";
+            _pzNote = coins > 0 ? $"Мат! Задача решена: +{coins} монет." : firstSolve ? "Мат! Задача решена, но монеты ушли на подсказки." : "Мат! Задача решена.";
             _celebrateAfter = Time.time + 0.6f;
-            CelebratePuzzle(_puzzle, coins);
+            CelebratePuzzle(_puzzle, coins, firstSolve);
             CelebrateNewQuests(before);
             return;
         }
@@ -152,9 +155,15 @@ public partial class ChessBoardView
         Sfx.Play(capture ? Sfx.Capture : Sfx.Check);
     }
 
+    private string RewardLine()
+    {
+        int coins = Rewards.PuzzleCoins(_progress, _puzzle);
+        return coins == _puzzle.Reward ? $"Награда: {coins} монет" : $"Награда: {coins} из {_puzzle.Reward} монет";
+    }
+
     private string PuzzleStatus()
     {
-        if (_pzSolved || Time.time - _pzWrongAt < 2.5f)
+        if (_pzSolved || Time.time - _pzWrongAt < 2.5f || Time.time - _pzInfoAt < 2.5f)
             return _pzNote;
         if (_pzReplyAt >= 0)
             return "Верно! Соперник отвечает...";
@@ -182,8 +191,20 @@ public partial class ChessBoardView
             StartPuzzle(_puzzle);
             return;
         }
-        if (Theme.Button(new Rect(right - 440, 12, 130, 44), "Подсказка", Theme.Orange, 18, !_pzSolved && _pzReplyAt < 0))
+        if (Theme.Button(new Rect(right - 440, 12, 130, 44), "Подсказка", Theme.Orange, 18, !_pzSolved && _pzReplyAt < 0 && !_pzHint))
+        {
+            // Each hint costs a third of the coins; a hint already on the board is not charged again.
+            int before = Rewards.PuzzleCoins(_progress, _puzzle);
+            Rewards.UseHint(_progress, _puzzle);
+            SaveProgress();
             _pzHint = true;
+            if (!_progress.solved.Contains(_puzzle.Number))
+            {
+                int now = Rewards.PuzzleCoins(_progress, _puzzle);
+                _pzNote = now > 0 ? $"Подсказка: награда {before} → {now} монет." : "Подсказка: за эту задачу монет уже не будет.";
+                _pzInfoAt = Time.time;
+            }
+        }
         if (width >= 860)
             GUI.Label(new Rect(150, 12, width - 600, 44), $"Задача {_puzzle.Number}", Theme.Label(24, PuzzleColor, TextAnchor.MiddleCenter, display: true));
 
@@ -263,10 +284,10 @@ public partial class ChessBoardView
             GUI.Label(new Rect(panel.x + 16, panel.y + 12, panel.width - 32, 30), $"Задача {_puzzle.Number}", Theme.Label(22, Theme.Text, bold: true));
             GUI.Label(new Rect(panel.x + 16, panel.y + 46, panel.width - 32, 26), _puzzle.MateIn == 1 ? "Мат в 1 ход" : "Мат в 2 хода", Theme.Label(17, PuzzleColor, bold: true));
             bool done = _progress.solved.Contains(_puzzle.Number);
-            GUI.Label(new Rect(panel.x + 16, panel.y + 78, panel.width - 32, 24), done ? "Уже решена" : $"Награда: {_puzzle.Reward} монет",
+            GUI.Label(new Rect(panel.x + 16, panel.y + 78, panel.width - 32, 24), done ? "Уже решена" : RewardLine(),
                 Theme.Label(15, done ? Theme.Muted : Theme.Gold));
             GUI.Label(new Rect(panel.x + 16, panel.y + 116, panel.width - 32, 160),
-                "Ходи за ту сторону, чья очередь. Подойдёт любой ход, который ставит мат. В задачах на 2 хода соперник ответит сам.\n\n«Подсказка» покажет, какой фигурой ходить.",
+                "Ходи за ту сторону, чья очередь. Подойдёт любой ход, который ставит мат. В задачах на 2 хода соперник ответит сам.\n\n«Подсказка» покажет, какой фигурой ходить. Каждая подсказка забирает треть награды.",
                 Theme.Label(14, Theme.Muted, TextAnchor.UpperLeft, wrap: true));
             GUI.Label(new Rect(panel.x + 16, panel.yMax - 40, panel.width - 32, 26), $"Решено: {_progress.solved.Count} из {PuzzleBook.All.Count}",
                 Theme.Label(15, Theme.Text, bold: true));

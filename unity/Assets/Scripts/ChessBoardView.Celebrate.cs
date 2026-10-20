@@ -54,13 +54,13 @@ public partial class ChessBoardView
         }
     }
 
-    private void CelebratePuzzle(Puzzle puzzle, int coins)
+    private void CelebratePuzzle(Puzzle puzzle, int coins, bool firstSolve)
     {
         _celebrations.Enqueue(new Celebration
         {
             Title = "ЗАДАЧА РЕШЕНА!",
             Text = $"Задача {puzzle.Number}: мат в {puzzle.MateIn} {(puzzle.MateIn == 1 ? "ход" : "хода")}",
-            Reward = coins > 0 ? $"+{coins} монет" : "Монеты за неё уже получены",
+            Reward = coins > 0 ? $"+{coins} монет" : firstSolve ? "Монеты ушли на подсказки" : "Монеты за неё уже получены",
             Puzzle = true,
         });
     }
