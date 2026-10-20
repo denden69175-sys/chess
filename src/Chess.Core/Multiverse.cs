@@ -139,6 +139,8 @@ namespace Chess.Core
         private readonly Stack<UndoRecord> _undo = new Stack<UndoRecord>();
         private readonly List<Move5D> _turnMoves = new List<Move5D>();
         private readonly List<List<Move5D>> _history = new List<List<Move5D>>();
+        private readonly List<Piece?> _turnCaptures = new List<Piece?>();
+        private readonly List<Piece> _captured = new List<Piece>();
 
         public MultiverseGame() : this(Position.Start)
         {
@@ -159,6 +161,8 @@ namespace Chess.Core
             Result = other.Result;
             Winner = other.Winner;
             _history.AddRange(other._history);
+            _turnCaptures.AddRange(other._turnCaptures);
+            _captured.AddRange(other._captured);
             foreach (var move in other._turnMoves)
                 _turnMoves.Add(move);
             // Undo records point at timelines by index, which the copy shares.
@@ -429,9 +433,15 @@ namespace Chess.Core
         {
             if (!IsLegalMove(move))
                 throw new InvalidOperationException($"Illegal move {move}.");
+            var target = _timelines[move.ToTimeline][move.ToPly];
+            _turnCaptures.Add(move.IsSpatial ? Game.CapturedBy(target, move.OnBoard) : target[move.To]);
             Apply(move);
             _turnMoves.Add(move);
         }
+
+        /// <summary>Every piece taken so far, including in the turn being made, in order.</summary>
+        public IEnumerable<Piece> CapturedPieces =>
+            _captured.Concat(_turnCaptures.Where(p => p.HasValue).Select(p => p!.Value));
 
         private void Apply(Move5D move)
         {
@@ -496,6 +506,7 @@ namespace Chess.Core
             if (_turnMoves.Count == 0)
                 throw new InvalidOperationException("No move to take back in this turn.");
             _turnMoves.RemoveAt(_turnMoves.Count - 1);
+            _turnCaptures.RemoveAt(_turnCaptures.Count - 1);
             Revert();
         }
 
@@ -522,6 +533,8 @@ namespace Chess.Core
                 throw new InvalidOperationException("The turn cannot be submitted yet.");
             _history.Add(new List<Move5D>(_turnMoves));
             _turnMoves.Clear();
+            _captured.AddRange(_turnCaptures.Where(p => p.HasValue).Select(p => p!.Value));
+            _turnCaptures.Clear();
             _undo.Clear();
             Mover = Mover.Opponent();
             UpdateResult();

@@ -452,17 +452,18 @@ public partial class ChessBoardView
             GUI.Label(new Rect(panel.x + 16, panel.y + 12, panel.width - 32, 28), "Игроки", Theme.Label(20, Theme.Text, bold: true));
             for (int p = 0; p < TeamGame.Players; p++)
             {
-                var row = new Rect(panel.x + 12, panel.y + 50 + p * 62, panel.width - 24, 54);
+                var row = new Rect(panel.x + 12, panel.y + 50 + p * 74, panel.width - 24, 66);
                 bool turn = !_team.IsOver && _team.Player == p;
                 Theme.Fill(row, turn ? Theme.WithAlpha(Theme.Gold, 0.22f) : Theme.WithAlpha(Theme.PanelLight, 0.6f), 12);
                 if (turn)
                     Theme.Outline(row, Theme.Gold, 2, 12);
-                var chip = new Rect(row.x + 10, row.y + 15, 24, 24);
+                var chip = new Rect(row.x + 10, row.y + 9, 24, 24);
                 Theme.Fill(chip, TeamGame.ColorOf(p) == PieceColor.White ? WhiteFrame : BlackFrame, 12);
                 Theme.Outline(chip, TeamGame.IsKingSide(p) ? KingFlank : QueenFlank, 3, 12);
-                GUI.Label(new Rect(row.x + 42, row.y, row.width - 46, row.height), TeamPlayerName(p), Theme.Label(15, Theme.Text, wrap: true));
+                GUI.Label(new Rect(row.x + 42, row.y + 2, row.width - 46, 38), TeamPlayerName(p), Theme.Label(15, Theme.Text, wrap: true));
+                DrawTaken(new Rect(row.x + 10, row.y + 40, row.width - 20, 22), TakenIcons(_team.CapturedBy(p)));
             }
-            float ly = panel.y + 50 + 4 * 62 + 10;
+            float ly = panel.y + 50 + 4 * 74 + 6;
             GUI.Label(new Rect(panel.x + 16, ly, panel.width - 32, 80),
                 "Золотая метка — ферзевый фланг (игрок 1), бирюзовая — королевский (игрок 2).", Theme.Label(14, Theme.Muted, TextAnchor.UpperLeft, wrap: true));
         }
@@ -659,20 +660,22 @@ public partial class ChessBoardView
             GUI.Label(new Rect(panel.x + 16, panel.y + 12, panel.width - 32, 28), "Игроки", Theme.Label(20, Theme.Text, bold: true));
             for (int p = 0; p < ThreeGame.PlayerCount; p++)
             {
-                var row = new Rect(panel.x + 12, panel.y + 50 + p * 70, panel.width - 24, 62);
+                var row = new Rect(panel.x + 12, panel.y + 50 + p * 92, panel.width - 24, 84);
                 bool alive = _three.IsAlive(p);
                 bool turn = !_three.IsOver && _three.Player == p;
                 Theme.Fill(row, turn ? Theme.WithAlpha(Theme.Gold, 0.22f) : Theme.WithAlpha(Theme.PanelLight, alive ? 0.6f : 0.25f), 12);
                 if (turn)
                     Theme.Outline(row, Theme.Gold, 2, 12);
-                var chip = new Rect(row.x + 10, row.y + 19, 24, 24);
+                var chip = new Rect(row.x + 10, row.y + 13, 24, 24);
                 Theme.Fill(chip, ThreeColors[p], 12);
                 Theme.Outline(chip, Theme.Muted, 1.5f, 12);
                 int count = Enumerable.Range(0, ThreeGame.Squares).Count(i => _three[i].HasValue && _three[i]!.Value.Owner == p);
                 string text = ThreePlayerName(p) + "\n" + (alive ? $"фигур: {count}" : "выбыли");
-                GUI.Label(new Rect(row.x + 42, row.y, row.width - 46, row.height), text, Theme.Label(15, alive ? Theme.Text : Theme.Muted, wrap: true));
+                GUI.Label(new Rect(row.x + 42, row.y + 2, row.width - 46, 46), text, Theme.Label(15, alive ? Theme.Text : Theme.Muted, wrap: true));
+                var taken = _three.CapturedBy(p).Select(t => (PieceTexture(t.Type, t.Owner == 2 ? PieceColor.Black : PieceColor.White), t.Owner == 1 ? RedArmy : Color.white, t.Type)).ToList();
+                DrawTaken(new Rect(row.x + 10, row.y + 54, row.width - 20, 24), taken);
             }
-            GUI.Label(new Rect(panel.x + 16, panel.y + 50 + 3 * 70 + 8, panel.width - 32, 120),
+            GUI.Label(new Rect(panel.x + 16, panel.y + 50 + 3 * 92 + 6, panel.width - 32, 120),
                 $"Шахов нет: короля можно съесть, и тогда его армия переходит к вам.\nХодов без взятий: {_three.QuietMoves} из {ThreeGame.QuietLimit}.",
                 Theme.Label(14, Theme.Muted, TextAnchor.UpperLeft, wrap: true));
         }

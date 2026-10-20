@@ -84,6 +84,19 @@ namespace Chess.Core
 
         public bool IsLegal(Move move) => LegalMoves().Contains(move);
 
+        /// <summary>Pieces this player has taken, in order.</summary>
+        public List<Piece> CapturedBy(int player)
+        {
+            var result = new List<Piece>();
+            for (int i = player; i < _game.Moves.Count; i += Players)
+            {
+                var piece = Game.CapturedBy(_game.Positions[i], _game.Moves[i]);
+                if (piece.HasValue)
+                    result.Add(piece.Value);
+            }
+            return result;
+        }
+
         public Move? FindMove(string uci)
         {
             var move = _game.FindMove(uci);

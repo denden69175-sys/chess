@@ -86,6 +86,8 @@ namespace Chess.Core
             public bool Draw;
             public TriMove? Move;
             public int? Eliminated;
+            public int By;
+            public TriPiece? Captured;
 
             public State Copy() => new State
             {
@@ -178,6 +180,10 @@ namespace Chess.Core
             }
             return null;
         }
+
+        /// <summary>Pieces this player has taken, in order, with the owner they had when taken.</summary>
+        public List<TriPiece> CapturedBy(int player) =>
+            _states.Skip(1).Where(s => s.By == player && s.Captured.HasValue).Select(s => s.Captured!.Value).ToList();
 
         public IEnumerable<TriMove> History => _states.Skip(1).Select(s => s.Move!.Value);
 
@@ -327,6 +333,8 @@ namespace Chess.Core
                 ? new TriPiece(PieceType.Queen, mover.Owner, mover.Army)
                 : mover;
             next.Move = move;
+            next.By = mover.Owner;
+            next.Captured = captured;
             next.Quiet = captured.HasValue || mover.Type == PieceType.Pawn ? 0 : Now.Quiet + 1;
 
             if (captured.HasValue && captured.Value.Type == PieceType.King)

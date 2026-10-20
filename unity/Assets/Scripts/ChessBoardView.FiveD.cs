@@ -538,6 +538,7 @@ public partial class ChessBoardView
         Theme.Fill(status, Theme.Panel, 20);
         Theme.Outline(status, danger ? Theme.Red : _mdCanSubmit && FiveDPlayerMayMove ? Theme.Green : Theme.PanelLight, 2, 20);
         GUI.Label(status, FiveDStatus(), Theme.Label(statusWidth < 500 ? 15 : 17, Theme.Text, TextAnchor.MiddleCenter, bold: true));
+        DrawFiveDTaken(width, height, status);
 
         // Bottom bar.
         float by = height - 64;
@@ -569,6 +570,31 @@ public partial class ChessBoardView
             DrawFiveDRules(width, height);
         else if (window)
             DrawResult(width, height);
+    }
+
+    /// <summary>Pieces each side has taken: beside the status line when there is room, otherwise over the bottom of the canvas.</summary>
+    private void DrawFiveDTaken(float width, float height, Rect status)
+    {
+        var captured = _md.CapturedPieces.ToList();
+        var byWhite = captured.Where(p => p.Color == PieceColor.Black).ToList();
+        var byBlack = captured.Where(p => p.Color == PieceColor.White).ToList();
+        float side = status.x - 24;
+        var label = Theme.Label(13, Theme.Muted, bold: true);
+        if (side >= 140)
+        {
+            GUI.Label(new Rect(12, 58, side, 18), "Белые съели", label);
+            DrawTaken(new Rect(12, 78, side, 24), TakenIcons(byWhite), Advantage(byWhite, byBlack));
+            GUI.Label(new Rect(status.xMax + 12, 58, side, 18), "Чёрные съели", label);
+            DrawTaken(new Rect(status.xMax + 12, 78, side, 24), TakenIcons(byBlack), Advantage(byBlack, byWhite));
+        }
+        else
+        {
+            var strip = new Rect(0, _mdCanvas.yMax - 32, width, 32);
+            Theme.Fill(strip, new Color(0.05f, 0.04f, 0.12f, 0.75f));
+            float half = (width - 30) / 2;
+            DrawTaken(new Rect(10, strip.y + 4, half, 24), TakenIcons(byWhite), Advantage(byWhite, byBlack));
+            DrawTaken(new Rect(20 + half, strip.y + 4, half, 24), TakenIcons(byBlack), Advantage(byBlack, byWhite));
+        }
     }
 
     private string FiveDStatus()

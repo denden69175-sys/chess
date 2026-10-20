@@ -52,6 +52,28 @@ namespace Chess.Core
 
         public bool IsLegal(Move move) => !IsOver && _legalMoves.Contains(move);
 
+        /// <summary>The piece a move takes on this board, if any (the pawn for en passant).</summary>
+        public static Piece? CapturedBy(Position position, Move move)
+        {
+            if (move.Kind == MoveKind.EnPassant)
+                return new Piece(PieceType.Pawn, position.SideToMove.Opponent());
+            return position[move.To];
+        }
+
+        /// <summary>Pieces taken in the first <paramref name="moveCount"/> moves (all moves when null), in order.</summary>
+        public List<Piece> CapturedPieces(int? moveCount = null)
+        {
+            var captured = new List<Piece>();
+            int count = Math.Min(moveCount ?? _moves.Count, _moves.Count);
+            for (int i = 0; i < count; i++)
+            {
+                var piece = CapturedBy(_positions[i], _moves[i]);
+                if (piece.HasValue)
+                    captured.Add(piece.Value);
+            }
+            return captured;
+        }
+
         /// <summary>Finds the legal move between two squares, e.g. for a drag on the board.</summary>
         public Move? FindMove(Square from, Square to, PieceType? promotion = null)
         {

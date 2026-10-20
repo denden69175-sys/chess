@@ -115,6 +115,25 @@ namespace Chess.Core
 
         public int JumpsLeft(PieceColor color) => _jumpsLeft[(int)color];
 
+        /// <summary>
+        /// Pieces taken in the history of the active timeline: its own moves plus the moves of the
+        /// timelines it grew from, up to the boards where it split off.
+        /// </summary>
+        public List<Piece> CapturedPieces()
+        {
+            var result = new List<Piece>();
+            var line = ActiveTimeline;
+            int? upTo = null;
+            while (true)
+            {
+                result.InsertRange(0, line.Game.CapturedPieces(upTo));
+                if (!line.ParentId.HasValue)
+                    return result;
+                upTo = line.BranchMove;
+                line = _timelines[line.ParentId.Value];
+            }
+        }
+
         /// <summary>Own moves the player still has to make before the next jump is allowed.</summary>
         public int MovesUntilJump(PieceColor color) =>
             Math.Max(0, Cooldown - (_ownMoves[(int)color] - _lastJumpAt[(int)color]));

@@ -1,4 +1,6 @@
 #nullable enable
+using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using Chess.Core;
 using UnityEngine;
@@ -26,6 +28,47 @@ public partial class ChessBoardView
                 return null;
             return Winner == _human;
         }
+    }
+
+    private static int TakenValue(PieceType type) => type == PieceType.King ? 100 : PieceValues.Of(type);
+
+    private List<(Texture2D? Texture, Color Tint, PieceType Type)> TakenIcons(IEnumerable<Piece> pieces) =>
+        pieces.Select(p => (PieceTexture(p.Type, p.Color), Color.white, p.Type)).ToList();
+
+    /// <summary>The material one side has won over the other, as "+3", or empty when it is not ahead.</summary>
+    private static string Advantage(IEnumerable<Piece> taken, IEnumerable<Piece> lost)
+    {
+        int lead = taken.Sum(p => TakenValue(p.Type)) - lost.Sum(p => TakenValue(p.Type));
+        return lead > 0 ? "+" + lead : "";
+    }
+
+    /// <summary>
+    /// Small icons of the pieces a player has taken, the most valuable first, overlapping when there
+    /// are many. <paramref name="extra"/> (such as "+3") goes on the right.
+    /// </summary>
+    private static void DrawTaken(Rect area, List<(Texture2D? Texture, Color Tint, PieceType Type)> pieces, string extra = "")
+    {
+        var list = pieces.Where(p => p.Texture != null).OrderByDescending(p => TakenValue(p.Type)).ToList();
+        float size = area.height;
+        float textWidth = extra.Length > 0 ? 40 : 0;
+        float room = area.width - textWidth;
+        if (list.Count == 0)
+        {
+            GUI.Label(area, "ничего не съели", Theme.Label(Mathf.RoundToInt(Mathf.Clamp(size * 0.6f, 11, 14)), Theme.Muted));
+        }
+        else
+        {
+            float step = list.Count == 1 ? size : Mathf.Min(size * 0.82f, (room - size) / (list.Count - 1));
+            var color = GUI.color;
+            for (int i = 0; i < list.Count; i++)
+            {
+                GUI.color = list[i].Tint * color;
+                GUI.DrawTexture(new Rect(area.x + i * step, area.y, size, size), list[i].Texture);
+            }
+            GUI.color = color;
+        }
+        if (extra.Length > 0)
+            GUI.Label(new Rect(area.xMax - textWidth, area.y, textWidth, size), extra, Theme.Label(15, Theme.Gold, TextAnchor.MiddleRight, bold: true));
     }
 
     private static string ColorName(PieceColor color, bool genitive) =>
@@ -213,7 +256,8 @@ public partial class ChessBoardView
         float inner = panelWidth - 28;
         float y = top + 12;
 
-        // Players: the side to move glows.
+        // Players: the side to move glows. Under each one, the pieces they have taken.
+        var captured = _game.CapturedPieces();
         foreach (var color in new[] { PieceColor.White, PieceColor.Black })
         {
             var row = new Rect(x, y, inner, 34);
@@ -230,7 +274,10 @@ public partial class ChessBoardView
             if (_botArmyName.Length > 0 && _opponent == Opponent.Bot && color != _human)
                 name += " · " + _botArmyName;
             GUI.Label(new Rect(row.x + 40, row.y, row.width - 44, row.height), name, Theme.Label(16, Theme.Text, bold: toMove));
-            y += 40;
+            var taken = captured.Where(p => p.Color != color).ToList();
+            var lost = captured.Where(p => p.Color == color).ToList();
+            DrawTaken(new Rect(row.x + 6, row.yMax + 3, row.width - 10, 22), TakenIcons(taken), Advantage(taken, lost));
+            y += 66;
         }
         y += 4;
 
@@ -360,6 +407,15 @@ public partial class ChessBoardView
             text = parts.ToString();
         }
         GUI.Label(new Rect(10, y, width - 20, 24), text, line);
+
+        // Taken pieces: White's on the left half, Black's on the right.
+        var captured = _game.CapturedPieces();
+        float takenY = y + (_timeTravel ? 102 : 30);
+        float half = (width - 30) / 2;
+        var byWhite = captured.Where(p => p.Color == PieceColor.Black).ToList();
+        var byBlack = captured.Where(p => p.Color == PieceColor.White).ToList();
+        DrawTaken(new Rect(10, takenY, half, 24), TakenIcons(byWhite), Advantage(byWhite, byBlack));
+        DrawTaken(new Rect(20 + half, takenY, half, 24), TakenIcons(byBlack), Advantage(byBlack, byWhite));
         if (_timeTravel)
         {
             var side = _game.Current.SideToMove;
