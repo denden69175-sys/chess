@@ -185,7 +185,7 @@ namespace Chess.Core
         public List<TriPiece> CapturedBy(int player) =>
             _states.Skip(1).Where(s => s.By == player && s.Captured.HasValue).Select(s => s.Captured!.Value).ToList();
 
-        public IEnumerable<TriMove> History => _states.Skip(1).Select(s => s.Move!.Value);
+        public IEnumerable<TriMove> History => _states.Skip(1).Where(s => s.Move.HasValue).Select(s => s.Move!.Value);
 
         // ---------------------------------------------------------------- moves
 
@@ -360,6 +360,28 @@ namespace Chess.Core
             {
                 next.Player = NextPlayer(next, mover.Owner);
             }
+            _states.Add(next);
+        }
+
+        /// <summary>
+        /// A player leaves the game (gave up or lost the connection in online play): their army is
+        /// taken off the board and the others play on. Nobody recruits it, since no king was taken.
+        /// </summary>
+        public void Resign(int player)
+        {
+            if (IsOver || player < 0 || player >= PlayerCount || !Now.Alive[player])
+                return;
+            var next = Now.Copy();
+            next.Alive[player] = false;
+            next.Eliminated = player;
+            next.By = -1;
+            for (int i = 0; i < Squares; i++)
+                if (next.Board[i].HasValue && next.Board[i]!.Value.Owner == player)
+                    next.Board[i] = null;
+            if (next.Alive.Count(a => a) == 1)
+                next.Winner = Array.IndexOf(next.Alive, true);
+            else if (next.Player == player)
+                next.Player = NextPlayer(next, player);
             _states.Add(next);
         }
 

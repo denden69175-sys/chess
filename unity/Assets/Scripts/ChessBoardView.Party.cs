@@ -78,8 +78,23 @@ public partial class ChessBoardView
     private string _threeNews = "";
     private float _threeNewsAt = -100;
 
-    private bool TeamHuman(int player) => _partyOpponent == 1 || player == _teamSeat;
-    private bool ThreeHuman(int player) => _partyOpponent == 1 || player == _threeSeat;
+    // Online play: the server sits everyone; the other seats are people on other devices.
+    private bool _partyOnline;
+    private string[] _partyNames = new string[0];
+    private bool _partyResigned;
+    private string? _partyEndTitle;
+    private string _partyEndReason = "";
+    private Color _partyEndAccent = Theme.Gold;
+
+    /// <summary>Everyone plays on this device, taking turns.</summary>
+    private bool PartyHotSeat => !_partyOnline && _partyOpponent == 1;
+
+    private bool TeamHuman(int player) => PartyHotSeat || player == _teamSeat;
+    private bool ThreeHuman(int player) => PartyHotSeat || player == _threeSeat;
+
+    private bool PartyFinished => _partyEndTitle != null || (_page == Page.Team ? _team.IsOver : _three.IsOver);
+
+    private string OnlineName(int seat) => seat < _partyNames.Length && _partyNames[seat].Length > 0 ? _partyNames[seat] : "Игрок";
 
     private void CancelPartyBots()
     {
@@ -137,6 +152,7 @@ public partial class ChessBoardView
         if (Theme.Button(new Rect(cx + inner / 3 + 6, cy, inner * 2 / 3 - 6, 62), "ИГРАТЬ", Theme.Green, 26))
         {
             SaveMenuSettings();
+            _partyOnline = false;
             if (three)
                 StartThree();
             else
@@ -180,12 +196,22 @@ public partial class ChessBoardView
         if (Theme.Button(new Rect(12, 12, 118, 44), "‹ Меню", Theme.PanelLight, 18))
         {
             Theme.InputBlocked = false;
-            ShowPage(Page.Home);
+            LeaveParty(_partyOnline ? Page.Online : Page.Home);
             return false;
         }
         float right = width - 12;
-        if (Theme.Button(new Rect(right - 140, 12, 140, 44), "Заново", Theme.Blue, 18))
+        if (_partyOnline)
+        {
+            if (!PartyFinished && Theme.Button(new Rect(right - 140, 12, 140, 44), "Сдаться", Theme.Red, 18))
+            {
+                _partyResigned = true;
+                Resign();
+            }
+        }
+        else if (Theme.Button(new Rect(right - 140, 12, 140, 44), "Заново", Theme.Blue, 18))
+        {
             restart();
+        }
         if (Theme.Button(new Rect(right - 292, 12, 140, 44), "Правила", accent, 18))
             _partyRules = true;
         if (width >= 760)
@@ -211,10 +237,17 @@ public partial class ChessBoardView
             Theme.Label(title.Length > 14 ? 28 : 40, accent, TextAnchor.MiddleCenter, display: true), 3);
         GUI.Label(new Rect(card.x + 20, card.y + 96, card.width - 40, 40), reason, Theme.Label(18, Theme.Text, TextAnchor.MiddleCenter, wrap: true));
         float buttonWidth = (cardWidth - 60) / 2;
-        if (Theme.Button(new Rect(card.x + 20, card.y + 150, buttonWidth, 54), "Ещё раз", Theme.Green, 19))
+        if (_partyOnline)
+        {
+            if (Theme.Button(new Rect(card.x + 20, card.y + 150, buttonWidth, 54), "Ещё онлайн", Theme.Teal, 18))
+                LeaveParty(Page.Online);
+        }
+        else if (Theme.Button(new Rect(card.x + 20, card.y + 150, buttonWidth, 54), "Ещё раз", Theme.Green, 19))
+        {
             again();
+        }
         if (Theme.Button(new Rect(card.x + 40 + buttonWidth, card.y + 150, buttonWidth, 54), "В меню", Theme.Blue, 19))
-            ShowPage(Page.Home);
+            LeaveParty(Page.Home);
         if (GUI.Button(new Rect(card.x, card.yMax - 70, card.width, 40), "Посмотреть доску", Theme.Label(16, Theme.Muted, TextAnchor.MiddleCenter, bold: true)))
         {
             Theme.ClickTaken();
@@ -230,6 +263,119 @@ public partial class ChessBoardView
             _partyEndShown = true;
             Sfx.Play(humanWon == false ? Sfx.Lose : Sfx.Win);
         }
+    }
+
+    /// <summary>Leaves the game screen; an online game still going on counts as giving up.</summary>
+    private void LeaveParty(Page page)
+    {
+        if (_partyOnline && !PartyFinished)
+            Resign();
+        ShowPage(page);
+    }
+
+    private void ResetPartyEnd()
+    {
+        _partyEndShown = false;
+        _partyEndHidden = false;
+        _partyRules = false;
+        _partyResigned = false;
+        _partyEndTitle = null;
+        _waitingForServer = false;
+    }
+
+    // ---------------------------------------------------------------- online
+
+    private void StartPartyOnline(NetMessage message)
+    {
+        _partyOnline = true;
+        _partyNames = message.names.Split('|');
+        if (message.mode == "team")
+        {
+            _teamSeat = Mathf.Clamp(message.seat, 0, TeamGame.Players - 1);
+            StartTeam();
+            ShowToast($"Все в сборе. Вы играете за: {TeamSeatNames[_teamSeat]}. Напарник: {OnlineName(TeamGame.Partner(_teamSeat))}.");
+        }
+        else
+        {
+            _threeSeat = Mathf.Clamp(message.seat, 0, ThreeGame.PlayerCount - 1);
+            StartThree();
+            ShowToast($"Все в сборе. Вы играете за {ThreeGenitive[_threeSeat]}.");
+        }
+    }
+
+    /// <summary>A move the server accepted, ours included: only then does it reach the board.</summary>
+    private void ApplyPartyMove(string action)
+    {
+        _waitingForServer = false;
+        if (_page == Page.Team)
+        {
+            var move = _team.FindMove(action);
+            if (move.HasValue)
+                PlayTeamMove(move.Value);
+            else
+                ShowToast("Ход с сервера не подошёл к доске: " + action);
+        }
+        else if (_page == Page.Three)
+        {
+            var move = _three.FindMove(action);
+            if (move.HasValue)
+                PlayThreeMove(move.Value);
+            else
+                ShowToast("Ход с сервера не подошёл к доске: " + action);
+        }
+    }
+
+    /// <summary>In "Тройной трон" a player gave up or left; their army leaves the board.</summary>
+    private void PartyPlayerOut(int seat)
+    {
+        if (_page != Page.Three || seat < 0 || seat >= ThreeGame.PlayerCount || !_three.IsAlive(seat))
+            return;
+        _three.Resign(seat);
+        _threeSelected = null;
+        _threeTargets.Clear();
+        if (seat == _threeSeat)
+        {
+            SetPartyEnd("ПОРАЖЕНИЕ", "Вы сдались.", Theme.Red);
+            return;
+        }
+        _threeNews = $"{ThreeNames[seat]} ({OnlineName(seat)}) вышли из игры, их армия ушла с доски.";
+        _threeNewsAt = Time.time;
+        Sfx.Play(Sfx.Jump);
+        if (_three.IsOver)
+            _partyEndAt = Time.time + 0.9f;
+    }
+
+    /// <summary>The server ended the game. A mate or the last king is already on the board; anything else is shown here.</summary>
+    private void EndPartyOnline(string result, string reason)
+    {
+        if (PartyFinished)
+            return;
+        _waitingForServer = false;
+        if (reason == "connection")
+        {
+            SetPartyEnd("НЕТ СВЯЗИ", "Связь с сервером потеряна.", Theme.Red);
+            return;
+        }
+        bool won = _page == Page.Team
+            ? result == (TeamGame.ColorOf(_teamSeat) == PieceColor.White ? "white" : "black")
+            : result == "seat" + _threeSeat;
+        bool left = reason == "opponent_left";
+        string text;
+        if (_partyResigned)
+            text = "Вы сдались.";
+        else if (_page == Page.Team)
+            text = won ? (left ? "Соперник вышел из игры." : "Соперник сдался.") : (left ? "Напарник вышел из игры." : "Напарник сдался.");
+        else
+            text = won ? (left ? "Последний соперник вышел из игры." : "Последний соперник сдался.") : "Партия окончена.";
+        SetPartyEnd(result == "draw" ? "НИЧЬЯ" : won ? "ПОБЕДА!" : "ПОРАЖЕНИЕ", text, won ? Theme.Gold : Theme.Red);
+    }
+
+    private void SetPartyEnd(string title, string reason, Color accent)
+    {
+        _partyEndTitle = title;
+        _partyEndReason = reason;
+        _partyEndAccent = accent;
+        _partyEndAt = Time.time + 0.2f;
     }
 
     /// <summary>The board rectangle for a square board of <paramref name="cells"/> cells, with room for a side panel when wide.</summary>
@@ -279,9 +425,7 @@ public partial class ChessBoardView
         _team = new TeamGame();
         _teamSelected = null;
         _teamTargets.Clear();
-        _partyEndShown = false;
-        _partyEndHidden = false;
-        _partyRules = false;
+        ResetPartyEnd();
         ShowPage(Page.Team);
         Sfx.Play(Sfx.Start);
         MaybeStartTeamBot();
@@ -289,7 +433,7 @@ public partial class ChessBoardView
 
     private void MaybeStartTeamBot()
     {
-        if (_team.IsOver || TeamHuman(_team.Player) || _teamBotTask != null)
+        if (_partyOnline || _team.IsOver || TeamHuman(_team.Player) || _teamBotTask != null)
             return;
         var position = _team.Current;
         var allowed = _team.LegalMoves();
@@ -308,11 +452,14 @@ public partial class ChessBoardView
             else if (task.IsFaulted)
                 Debug.LogException(task.Exception);
         }
-        UpdatePartyEnd(_team.IsOver, TeamHumanWon);
+        if (_partyEndTitle != null)
+            UpdatePartyEnd(true, _partyEndAccent != Theme.Red);
+        else
+            UpdatePartyEnd(_team.IsOver, TeamHumanWon);
     }
 
     private bool? TeamHumanWon =>
-        _partyOpponent == 1 || _team.Winner == null ? (bool?)null : _team.Winner == TeamGame.ColorOf(_teamSeat);
+        PartyHotSeat || _team.Winner == null ? (bool?)null : _team.Winner == TeamGame.ColorOf(_teamSeat);
 
     private void PlayTeamMove(Move move)
     {
@@ -330,7 +477,9 @@ public partial class ChessBoardView
     private string TeamPlayerName(int player)
     {
         string name = TeamSeatNames[player];
-        if (_partyOpponent == 1)
+        if (_partyOnline)
+            return name + ": " + OnlineName(player) + (player == _teamSeat ? " (вы)" : "");
+        if (PartyHotSeat)
             return name;
         if (player == _teamSeat)
             return name + " (вы)";
@@ -339,10 +488,12 @@ public partial class ChessBoardView
 
     private string TeamStatus()
     {
+        if (_partyEndTitle != null)
+            return _partyEndReason;
         if (_team.IsOver)
             return TeamResultReason();
         int player = _team.Player;
-        string who = TeamHuman(player) && _partyOpponent == 0 ? "Ваш ход" : "Ходит: " + TeamPlayerName(player);
+        string who = TeamHuman(player) && !PartyHotSeat ? "Ваш ход" : "Ходит: " + TeamPlayerName(player);
         if (_teamBotTask != null)
             who += "...";
         if (_team.Current.IsInCheck(_team.Current.SideToMove))
@@ -372,12 +523,12 @@ public partial class ChessBoardView
             return;
 
         var board = PartyBoardRect(width, height, 8, out var panel);
-        bool flip = _partyOpponent == 0 && TeamGame.ColorOf(_teamSeat) == PieceColor.Black;
+        bool flip = !PartyHotSeat && TeamGame.ColorOf(_teamSeat) == PieceColor.Black;
         float cell = board.width / 8;
         Rect CellRect(Square s) => new Rect(board.x + (flip ? 7 - s.File : s.File) * cell, board.y + (flip ? s.Rank : 7 - s.Rank) * cell, cell, cell);
 
         // Input.
-        bool mayMove = !_team.IsOver && TeamHuman(_team.Player) && _teamBotTask == null;
+        bool mayMove = !PartyFinished && TeamHuman(_team.Player) && _teamBotTask == null && !_waitingForServer;
         if (PartyClick(board, out var point))
         {
             int column = Mathf.Clamp((int)((point.x - board.x) / cell), 0, 7), row = Mathf.Clamp((int)((point.y - board.y) / cell), 0, 7);
@@ -385,7 +536,16 @@ public partial class ChessBoardView
             var target = _teamTargets.Where(m => m.To == square).OrderBy(m => m.Promotion == PieceType.Queen ? 0 : 1).FirstOrDefault();
             if (_teamSelected.HasValue && _teamTargets.Any(m => m.To == square))
             {
-                PlayTeamMove(target);
+                if (_partyOnline)
+                {
+                    SendAction(target.ToUci());
+                    _teamSelected = null;
+                    _teamTargets.Clear();
+                }
+                else
+                {
+                    PlayTeamMove(target);
+                }
             }
             else if (mayMove && _team.LegalMoves().Any(m => m.From == square) && _teamSelected != square)
             {
@@ -474,10 +634,13 @@ public partial class ChessBoardView
         else if (_partyEndShown && !_partyEndHidden)
         {
             var won = TeamHumanWon;
-            string title = _team.Winner == null ? "НИЧЬЯ" : _partyOpponent == 1
+            string title = _team.Winner == null ? "НИЧЬЯ" : PartyHotSeat
                 ? (_team.Winner == PieceColor.White ? "ПОБЕДИЛИ БЕЛЫЕ" : "ПОБЕДИЛИ ЧЁРНЫЕ")
                 : won == true ? "ПОБЕДА!" : "ПОРАЖЕНИЕ";
-            DrawPartyResult(width, height, title, TeamResultReason(), won == false ? Theme.Red : Theme.Gold, StartTeam);
+            if (_partyEndTitle != null)
+                DrawPartyResult(width, height, _partyEndTitle, _partyEndReason, _partyEndAccent, StartTeam);
+            else
+                DrawPartyResult(width, height, title, TeamResultReason(), won == false ? Theme.Red : Theme.Gold, StartTeam);
         }
     }
 
@@ -490,9 +653,7 @@ public partial class ChessBoardView
         _threeSelected = null;
         _threeTargets.Clear();
         _threeNews = "";
-        _partyEndShown = false;
-        _partyEndHidden = false;
-        _partyRules = false;
+        ResetPartyEnd();
         ShowPage(Page.Three);
         Sfx.Play(Sfx.Start);
         MaybeStartThreeBot();
@@ -500,7 +661,7 @@ public partial class ChessBoardView
 
     private void MaybeStartThreeBot()
     {
-        if (_three.IsOver || ThreeHuman(_three.Player) || _threeBotTask != null)
+        if (_partyOnline || _three.IsOver || ThreeHuman(_three.Player) || _threeBotTask != null)
             return;
         var board = _three.BoardCopy();
         int player = _three.Player;
@@ -519,10 +680,13 @@ public partial class ChessBoardView
             else if (task.IsFaulted)
                 Debug.LogException(task.Exception);
         }
-        bool? won = _partyOpponent == 1 || !_three.Winner.HasValue ? (bool?)null : _three.Winner == _threeSeat;
-        if (_partyOpponent == 0 && !_three.IsAlive(_threeSeat) && !_three.IsOver)
+        bool? won = PartyHotSeat || !_three.Winner.HasValue ? (bool?)null : _three.Winner == _threeSeat;
+        if (!PartyHotSeat && !_three.IsAlive(_threeSeat) && !_three.IsOver)
             won = false;
-        UpdatePartyEnd(_three.IsOver || (_partyOpponent == 0 && !_three.IsAlive(_threeSeat)), won);
+        if (_partyEndTitle != null)
+            UpdatePartyEnd(true, _partyEndAccent != Theme.Red);
+        else
+            UpdatePartyEnd(_three.IsOver || (!PartyHotSeat && !_three.IsAlive(_threeSeat)), won);
     }
 
     private void PlayThreeMove(TriMove move)
@@ -543,7 +707,7 @@ public partial class ChessBoardView
         {
             Sfx.Play(capture ? Sfx.Capture : Sfx.Move);
         }
-        bool humanOut = _partyOpponent == 0 && !_three.IsAlive(_threeSeat);
+        bool humanOut = !PartyHotSeat && !_three.IsAlive(_threeSeat);
         if (_three.IsOver || humanOut)
             _partyEndAt = Time.time + 0.9f;
         if (!_three.IsOver)
@@ -553,13 +717,17 @@ public partial class ChessBoardView
     private string ThreePlayerName(int player)
     {
         string name = ThreeNames[player];
-        if (_partyOpponent == 1)
+        if (_partyOnline)
+            return name + ": " + OnlineName(player) + (player == _threeSeat ? " (вы)" : "");
+        if (PartyHotSeat)
             return name;
         return name + (player == _threeSeat ? " (вы)" : " (бот)");
     }
 
     private string ThreeStatus()
     {
+        if (_partyEndTitle != null)
+            return _partyEndReason;
         if (_three.IsOver)
             return _three.Winner.HasValue ? $"Победили {ThreeNames[_three.Winner.Value]}!" : "Ничья: 150 ходов без взятий.";
         if (Time.time - _threeNewsAt < 4)
@@ -567,7 +735,7 @@ public partial class ChessBoardView
         int player = _three.Player;
         var king = _three.KingSquare(player);
         bool danger = king.HasValue && _three.IsAttacked(king.Value, player);
-        string who = _partyOpponent == 0 && player == _threeSeat ? "Ваш ход" : "Ходят " + ThreePlayerName(player) + (_threeBotTask != null ? "..." : "");
+        string who = !PartyHotSeat && player == _threeSeat ? "Ваш ход" : "Ходят " + ThreePlayerName(player) + (_threeBotTask != null ? "..." : "");
         return danger ? who + " — король под ударом!" : who;
     }
 
@@ -586,8 +754,8 @@ public partial class ChessBoardView
         float cell = board.width / n;
         Rect CellRect(int s) => new Rect(board.x + ThreeGame.FileOf(s) * cell, board.y + (n - 1 - ThreeGame.RankOf(s)) * cell, cell, cell);
 
-        bool mayMove = !_three.IsOver && ThreeHuman(_three.Player) && _threeBotTask == null
-            && (_partyOpponent == 1 || _three.IsAlive(_threeSeat));
+        bool mayMove = !PartyFinished && ThreeHuman(_three.Player) && _threeBotTask == null && !_waitingForServer
+            && (PartyHotSeat || _three.IsAlive(_threeSeat));
         if (PartyClick(board, out var point))
         {
             int file = Mathf.Clamp((int)((point.x - board.x) / cell), 0, n - 1);
@@ -595,7 +763,17 @@ public partial class ChessBoardView
             int square = ThreeGame.Index(file, rank);
             if (_threeSelected.HasValue && _threeTargets.Any(m => m.To == square))
             {
-                PlayThreeMove(_threeTargets.First(m => m.To == square));
+                var move = _threeTargets.First(m => m.To == square);
+                if (_partyOnline)
+                {
+                    SendAction(move.ToString());
+                    _threeSelected = null;
+                    _threeTargets.Clear();
+                }
+                else
+                {
+                    PlayThreeMove(move);
+                }
             }
             else if (mayMove && _three[square].HasValue && _three[square]!.Value.Owner == _three.Player && _threeSelected != square)
             {
@@ -685,16 +863,21 @@ public partial class ChessBoardView
             DrawPartyRules(width, height, true);
         else if (_partyEndShown && !_partyEndHidden)
         {
-            bool humanOut = _partyOpponent == 0 && !_three.IsAlive(_threeSeat);
+            bool humanOut = !PartyHotSeat && !_three.IsAlive(_threeSeat);
+            if (_partyEndTitle != null)
+            {
+                DrawPartyResult(width, height, _partyEndTitle, _partyEndReason, _partyEndAccent, StartThree);
+                return;
+            }
             string title;
             string reason;
             Color accent = Theme.Gold;
             if (_three.Winner.HasValue)
             {
-                bool mine = _partyOpponent == 0 && _three.Winner == _threeSeat;
-                title = _partyOpponent == 1 ? $"ПОБЕДИЛИ {ThreeNames[_three.Winner.Value].ToUpper()}" : mine ? "ПОБЕДА!" : "ПОРАЖЕНИЕ";
+                bool mine = !PartyHotSeat && _three.Winner == _threeSeat;
+                title = PartyHotSeat ? $"ПОБЕДИЛИ {ThreeNames[_three.Winner.Value].ToUpper()}" : mine ? "ПОБЕДА!" : "ПОРАЖЕНИЕ";
                 reason = "Остался последний король.";
-                if (_partyOpponent == 0 && !mine)
+                if (!PartyHotSeat && !mine)
                     accent = Theme.Red;
             }
             else if (humanOut && !_three.IsOver)

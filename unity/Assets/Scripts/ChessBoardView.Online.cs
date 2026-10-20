@@ -7,8 +7,8 @@ public partial class ChessBoardView
 {
     private const string DefaultServer = "ws://localhost:5080/ws";
 
-    private static readonly string[] OnlineModeNames = { "Классика", "Своя армия", "Время", "5D" };
-    private static readonly string[] OnlineModeCodes = { "classic", "army", "timetravel", "5d" };
+    private static readonly string[] OnlineModeNames = { "Классика", "Армия", "Время", "5D", "2 на 2", "Трое" };
+    private static readonly string[] OnlineModeCodes = { "classic", "army", "timetravel", "5d", "team", "three" };
 
     private enum NetState
     {
@@ -27,6 +27,9 @@ public partial class ChessBoardView
     private string _serverUrl = DefaultServer;
     private bool _showServer;
     private int _onlineMode;
+    private int _lobbyCount = 1;
+    private int _lobbyNeeded = 2;
+    private string _lobbyNames = "";
 
     private string _opponentName = "";
     private bool _waitingForServer;
@@ -111,29 +114,40 @@ public partial class ChessBoardView
                 break;
             case "waiting":
                 _netState = NetState.Searching;
+                SetLobby(message);
                 break;
             case "room":
                 _netState = NetState.Room;
                 _roomCode = message.code;
+                SetLobby(message);
                 break;
             case "start":
                 StartOnlineGame(message);
                 break;
             case "move":
                 _waitingForServer = false;
-                if (_page == Page.FiveD && _opponent == Opponent.Online)
+                if ((_page == Page.Team || _page == Page.Three) && _partyOnline)
+                    ApplyPartyMove(message.action);
+                else if (_page == Page.FiveD && _opponent == Opponent.Online)
                     ApplyFiveDTurn(message.action);
                 else if (_page == Page.Game && _opponent == Opponent.Online && !ApplyText(message.action))
                     ShowToast("Ход с сервера не подошёл к доске: " + message.action);
                 break;
+            case "out":
+                if (_page == Page.Three && _partyOnline)
+                    PartyPlayerOut(message.seat);
+                break;
             case "end":
-                EndOnlineGame(message.result, message.reason);
+                if ((_page == Page.Team || _page == Page.Three) && _partyOnline)
+                    EndPartyOnline(message.result, message.reason);
+                else
+                    EndOnlineGame(message.result, message.reason);
                 break;
             case "error":
                 _waitingForServer = false;
                 if (_page == Page.Game)
                     RedrawPieces();
-                else if (_page != Page.FiveD)
+                else if (_page != Page.FiveD && _page != Page.Team && _page != Page.Three)
                     _netState = NetState.Idle;
                 ShowToast(message.message);
                 break;
@@ -142,6 +156,8 @@ public partial class ChessBoardView
                 _net = null;
                 if ((_page == Page.Game || _page == Page.FiveD) && _opponent == Opponent.Online && !GameFinished)
                     EndOnlineGame("", "connection");
+                else if ((_page == Page.Team || _page == Page.Three) && _partyOnline && !PartyFinished)
+                    EndPartyOnline("", "connection");
                 else if (_netState != NetState.Idle)
                     ShowToast(message.message + "\nПроверьте, что сервер запущен и адрес верный.");
                 _netState = NetState.Idle;
@@ -150,9 +166,21 @@ public partial class ChessBoardView
         }
     }
 
+    private void SetLobby(NetMessage message)
+    {
+        _lobbyCount = message.count > 0 ? message.count : 1;
+        _lobbyNeeded = message.needed > 0 ? message.needed : 2;
+        _lobbyNames = message.names.Replace("|", ", ");
+    }
+
     private void StartOnlineGame(NetMessage message)
     {
         _netState = NetState.Idle;
+        if (message.mode == "team" || message.mode == "three")
+        {
+            StartPartyOnline(message);
+            return;
+        }
         _opponent = Opponent.Online;
         _human = message.color == "black" ? PieceColor.Black : PieceColor.White;
         _timeTravel = message.mode == "timetravel";
@@ -221,7 +249,7 @@ public partial class ChessBoardView
         cy += 80;
 
         GUI.Label(new Rect(cx, cy, inner, 22), "Режим", Theme.Label(16, Theme.Muted, bold: true));
-        _onlineMode = Theme.Pills(new Rect(cx, cy + 24, inner, 44), _onlineMode, OnlineModeNames, Theme.Teal);
+        _onlineMode = Theme.Pills(new Rect(cx, cy + 24, inner, 44), _onlineMode, OnlineModeNames, Theme.Teal, inner < 520 ? 13 : 15);
         cy += 80;
 
         if (army)
@@ -234,7 +262,8 @@ public partial class ChessBoardView
             cy += 44;
         }
 
-        if (Theme.Button(new Rect(cx, cy, inner, 60), "НАЙТИ СОПЕРНИКА", Theme.Green, 22))
+        bool party = OnlineModeCodes[_onlineMode] == "team" || OnlineModeCodes[_onlineMode] == "three";
+        if (Theme.Button(new Rect(cx, cy, inner, 60), party ? "НАЙТИ ИГРОКОВ" : "НАЙТИ СОПЕРНИКА", Theme.Green, 22))
             StartRequest("find");
         cy += 74;
 
@@ -293,7 +322,10 @@ public partial class ChessBoardView
         {
             GUI.Label(new Rect(card.x, card.y + 20, card.width, 30), "Код комнаты", Theme.Label(20, Theme.Muted, TextAnchor.MiddleCenter, bold: true));
             Theme.ShadowText(new Rect(card.x, card.y + 56, card.width, 80), _roomCode, Theme.Label(72, Theme.Gold, TextAnchor.MiddleCenter, display: true), 4);
-            GUI.Label(new Rect(card.x + 20, card.y + 140, card.width - 40, 60), "Скажите код другу. Игра начнётся, когда он войдёт.",
+            string hint = _lobbyNeeded > 2
+                ? $"Скажите код друзьям. В комнате {_lobbyCount} из {_lobbyNeeded}: {_lobbyNames}."
+                : "Скажите код другу. Игра начнётся, когда он войдёт.";
+            GUI.Label(new Rect(card.x + 20, card.y + 140, card.width - 40, 70), hint,
                 Theme.Label(17, Theme.Text, TextAnchor.MiddleCenter, wrap: true));
         }
         else
@@ -308,7 +340,8 @@ public partial class ChessBoardView
                 GUI.matrix = matrix;
             }
             string dots = new string('.', 1 + (int)(Time.time * 2) % 3);
-            string text = _netState == NetState.Connecting ? "Подключаемся к серверу" : "Ищем соперника";
+            string text = _netState == NetState.Connecting ? "Подключаемся к серверу"
+                : _lobbyNeeded > 2 ? $"Собираем игроков: {_lobbyCount} из {_lobbyNeeded}" : "Ищем соперника";
             GUI.Label(new Rect(card.x, card.y + 128, card.width, 40), text + dots, Theme.Label(24, Theme.Text, TextAnchor.MiddleCenter, bold: true));
             GUI.Label(new Rect(card.x, card.y + 168, card.width, 26), "Режим: " + OnlineModeNames[_onlineMode],
                 Theme.Label(16, Theme.Muted, TextAnchor.MiddleCenter));

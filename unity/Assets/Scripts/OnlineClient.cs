@@ -27,6 +27,10 @@ public class NetMessage
     public string result = "";
     public string reason = "";
     public string message = "";
+    public int seat;
+    public string names = "";
+    public int count;
+    public int needed;
 }
 
 /// <summary>

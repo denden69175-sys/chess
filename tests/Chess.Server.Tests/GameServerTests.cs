@@ -169,4 +169,97 @@ public class GameServerTests
         server.Handle(black, new Message { type = "move", action = "1,1,e7>1,1,e5;0,3,d7>0,3,d6" });
         Assert.Equal("1,1,e7>1,1,e5;0,3,d7>0,3,d6", white.Last("move").action);
     }
+
+    private static (GameServer server, FakePlayer[] seats) StartParty(string mode, int count)
+    {
+        var server = new GameServer(new Random(5));
+        var players = Enumerable.Range(0, count).Select(i => new FakePlayer("p" + i)).ToArray();
+        foreach (var p in players)
+            server.Handle(p, new Message { type = "find", mode = mode });
+        var seats = new FakePlayer[count];
+        foreach (var p in players)
+            seats[p.Last("start").seat!.Value] = p;
+        return (server, seats);
+    }
+
+    [Fact]
+    public void TeamGameWaitsForFourPlayers()
+    {
+        var server = new GameServer(new Random(5));
+        var players = Enumerable.Range(0, 4).Select(i => new FakePlayer("p" + i)).ToArray();
+        for (int i = 0; i < 3; i++)
+            server.Handle(players[i], new Message { type = "find", mode = Modes.Team });
+        Assert.Equal(3, players[0].Last("waiting").count);
+        Assert.Equal(4, players[0].Last("waiting").needed);
+        Assert.False(players[0].Got("start"));
+
+        server.Handle(players[3], new Message { type = "find", mode = Modes.Team });
+        Assert.Equal(new[] { 0, 1, 2, 3 }, players.Select(p => p.Last("start").seat!.Value).OrderBy(x => x));
+        Assert.Equal(4, players[0].Last("start").names!.Split('|').Length);
+    }
+
+    [Fact]
+    public void TeamPlayersMoveOnlyOnTheirTurnAndFlank()
+    {
+        var (server, seats) = StartParty(Modes.Team, 4);
+        // White 1 commands files a–d, so the e-pawn is not theirs.
+        server.Handle(seats[0], new Message { type = "move", action = "e2e4" });
+        Assert.Equal("error", seats[0].Inbox.Last().type);
+        server.Handle(seats[2], new Message { type = "move", action = "e2e4" });
+        Assert.Equal("error", seats[2].Inbox.Last().type);
+
+        server.Handle(seats[0], new Message { type = "move", action = "d2d4" });
+        Assert.All(seats, p => Assert.Equal("d2d4", p.Last("move").action));
+        server.Handle(seats[1], new Message { type = "move", action = "d7d5" });
+        server.Handle(seats[2], new Message { type = "move", action = "e2e4" });
+        Assert.Equal(2, seats[3].Last("move").seat);
+    }
+
+    [Fact]
+    public void LeavingATeamGameLosesItForTheTeam()
+    {
+        var (server, seats) = StartParty(Modes.Team, 4);
+        server.Disconnected(seats[3]);
+        Assert.Equal("white", seats[0].Last("end").result);
+        Assert.Equal("white", seats[1].Last("end").result);
+    }
+
+    [Fact]
+    public void RoomForThreeStartsWhenTheThirdJoins()
+    {
+        var server = new GameServer(new Random(3));
+        var host = new FakePlayer("host");
+        var a = new FakePlayer("a");
+        var b = new FakePlayer("b");
+        server.Handle(host, new Message { type = "create", mode = Modes.Three });
+        string code = host.Last("room").code!;
+        server.Handle(a, new Message { type = "join", code = code });
+        Assert.Equal(2, host.Last("room").count);
+        Assert.Equal(3, a.Last("room").needed);
+        Assert.False(host.Got("start"));
+        server.Handle(b, new Message { type = "join", code = code });
+        Assert.Equal(Modes.Three, b.Last("start").mode);
+        Assert.True(host.Got("start"));
+    }
+
+    [Fact]
+    public void ThreeGameGoesOnWhenOnePlayerGivesUp()
+    {
+        var (server, seats) = StartParty(Modes.Three, 3);
+        server.Handle(seats[0], new Message { type = "move", action = "e2-e4" });
+        Assert.Equal("e2-e4", seats[2].Last("move").action);
+
+        // Red gives up on their turn: their army leaves and Black moves next.
+        server.Handle(seats[1], new Message { type = "resign" });
+        Assert.Equal(1, seats[0].Last("out").seat);
+        Assert.False(seats[0].Got("end"));
+        server.Handle(seats[2], new Message { type = "move", action = "l5-l6" });
+        Assert.Equal("error", seats[2].Inbox.Last().type);
+        server.Handle(seats[2], new Message { type = "move", action = "k5-j5" });
+        Assert.Equal("k5-j5", seats[0].Last("move").action);
+        Assert.NotEqual("k5-j5", seats[1].Last("move").action);
+
+        server.Handle(seats[2], new Message { type = "resign" });
+        Assert.Equal("seat0", seats[0].Last("end").result);
+    }
 }

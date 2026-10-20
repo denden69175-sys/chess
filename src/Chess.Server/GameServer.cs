@@ -16,8 +16,8 @@ public interface IPlayer
 public sealed class GameServer
 {
     private readonly object _gate = new();
-    private readonly Dictionary<string, Waiting> _queue = new();
-    private readonly Dictionary<string, Waiting> _rooms = new();
+    private readonly Dictionary<string, Lobby> _queue = new();
+    private readonly Dictionary<string, Lobby> _rooms = new();
     private readonly Dictionary<IPlayer, Match> _matches = new();
     private readonly Random _random;
 
@@ -26,7 +26,23 @@ public sealed class GameServer
         _random = random ?? new Random();
     }
 
-    private sealed record Waiting(IPlayer Player, string Mode, Army? Army, string? Code);
+    private sealed record Waiting(IPlayer Player, Army? Army);
+
+    /// <summary>Players gathering for one game: the quick-match queue of a mode, or a private room.</summary>
+    private sealed class Lobby
+    {
+        public Lobby(string mode, string? code)
+        {
+            Mode = mode;
+            Code = code;
+        }
+
+        public string Mode { get; }
+        public string? Code { get; }
+        public List<Waiting> Members { get; } = new();
+        public int Needed => Modes.PlayersIn(Mode);
+        public bool Has(IPlayer player) => Members.Any(m => m.Player == player);
+    }
 
     public void Connected(IPlayer player) =>
         player.Send(new Message { type = "welcome", message = "Сервер шахмат на связи." });
@@ -56,7 +72,7 @@ public sealed class GameServer
                     Move(player, message.action);
                     break;
                 case "resign":
-                    Resign(player);
+                    Leave(player, "resign");
                     break;
                 case "ping":
                     player.Send(new Message { type = "pong" });
@@ -73,11 +89,7 @@ public sealed class GameServer
         lock (_gate)
         {
             RemoveWaiting(player);
-            if (_matches.TryGetValue(player, out var match))
-            {
-                var opponent = match.Opponent(player);
-                Finish(match, match.ColorOf(opponent), "opponent_left");
-            }
+            Leave(player, "opponent_left");
         }
     }
 
@@ -114,14 +126,16 @@ public sealed class GameServer
         if (!ReadyToWait(player, message, out var army))
             return;
         string mode = message.mode!;
-        if (_queue.TryGetValue(mode, out var other) && other.Player != player)
+        if (!_queue.TryGetValue(mode, out var lobby))
+            _queue[mode] = lobby = new Lobby(mode, null);
+        lobby.Members.Add(new Waiting(player, army));
+        if (lobby.Members.Count >= lobby.Needed)
         {
             _queue.Remove(mode);
-            StartMatch(mode, other, new Waiting(player, mode, army, null));
+            StartMatch(lobby);
             return;
         }
-        _queue[mode] = new Waiting(player, mode, army, null);
-        player.Send(new Message { type = "waiting", mode = mode });
+        Announce(lobby);
     }
 
     private void Create(IPlayer player, Message message)
@@ -133,56 +147,107 @@ public sealed class GameServer
         {
             code = _random.Next(1000, 10000).ToString();
         } while (_rooms.ContainsKey(code));
-        _rooms[code] = new Waiting(player, message.mode!, army, code);
-        player.Send(new Message { type = "room", code = code, mode = message.mode });
+        var lobby = new Lobby(message.mode!, code);
+        lobby.Members.Add(new Waiting(player, army));
+        _rooms[code] = lobby;
+        Announce(lobby);
     }
 
     private void Join(IPlayer player, Message message)
     {
         string code = (message.code ?? "").Trim();
-        if (!_rooms.TryGetValue(code, out var host))
+        if (!_rooms.TryGetValue(code, out var lobby))
         {
             Error(player, "Комнаты с таким кодом нет.");
             return;
         }
-        if (host.Player == player)
+        if (lobby.Has(player))
         {
-            Error(player, "Это ваша комната: дождитесь соперника.");
+            Error(player, "Вы уже в этой комнате: дождитесь остальных.");
             return;
         }
         // The guest plays the host's mode, whatever the guest's menu said.
-        if (!ReadyToWait(player, new Message { mode = host.Mode, army = message.army }, out var army))
+        if (!ReadyToWait(player, new Message { mode = lobby.Mode, army = message.army }, out var army))
             return;
-        _rooms.Remove(code);
-        StartMatch(host.Mode, host, new Waiting(player, host.Mode, army, null));
+        lobby.Members.Add(new Waiting(player, army));
+        if (lobby.Members.Count >= lobby.Needed)
+        {
+            _rooms.Remove(code);
+            StartMatch(lobby);
+            return;
+        }
+        Announce(lobby);
+    }
+
+    /// <summary>Tells everyone in a lobby how many players are there and how many the game needs.</summary>
+    private static void Announce(Lobby lobby)
+    {
+        foreach (var member in lobby.Members)
+        {
+            member.Player.Send(new Message
+            {
+                type = lobby.Code == null ? "waiting" : "room",
+                mode = lobby.Mode,
+                code = lobby.Code,
+                count = lobby.Members.Count,
+                needed = lobby.Needed,
+                names = string.Join("|", lobby.Members.Select(m => m.Player.Name)),
+            });
+        }
     }
 
     private void RemoveWaiting(IPlayer player)
     {
-        foreach (var key in _queue.Where(p => p.Value.Player == player).Select(p => p.Key).ToList())
-            _queue.Remove(key);
-        foreach (var key in _rooms.Where(p => p.Value.Player == player).Select(p => p.Key).ToList())
-            _rooms.Remove(key);
+        foreach (var (key, lobby) in _queue.Where(p => p.Value.Has(player)).ToList())
+            Drop(_queue, key, lobby, player);
+        foreach (var (key, lobby) in _rooms.Where(p => p.Value.Has(player)).ToList())
+            Drop(_rooms, key, lobby, player);
     }
 
-    private void StartMatch(string mode, Waiting first, Waiting second)
+    private static void Drop(Dictionary<string, Lobby> lobbies, string key, Lobby lobby, IPlayer player)
     {
-        bool firstIsWhite = _random.Next(2) == 0;
-        var white = firstIsWhite ? first : second;
-        var black = firstIsWhite ? second : first;
+        lobby.Members.RemoveAll(m => m.Player == player);
+        if (lobby.Members.Count == 0)
+            lobbies.Remove(key);
+        else
+            Announce(lobby);
+    }
 
-        var match = new Match(mode, white.Player, black.Player, white.Army, black.Army);
-        _matches[white.Player] = match;
-        _matches[black.Player] = match;
-
-        foreach (var (me, them, color) in new[] { (white, black, "white"), (black, white, "black") })
+    private void StartMatch(Lobby lobby)
+    {
+        var seats = lobby.Members.ToList();
+        if (seats.Count == 2)
         {
-            me.Player.Send(new Message
+            if (_random.Next(2) != 0)
+                seats.Reverse();
+        }
+        else
+        {
+            for (int i = seats.Count - 1; i > 0; i--)
+            {
+                int j = _random.Next(i + 1);
+                (seats[i], seats[j]) = (seats[j], seats[i]);
+            }
+        }
+
+        var white = seats[0];
+        var black = seats[1];
+        var match = new Match(lobby.Mode, seats.Select(s => s.Player).ToList(), white.Army, black.Army);
+        foreach (var seat in seats)
+            _matches[seat.Player] = match;
+
+        string names = string.Join("|", seats.Select(s => s.Player.Name));
+        for (int i = 0; i < seats.Count; i++)
+        {
+            seats[i].Player.Send(new Message
             {
                 type = "start",
-                mode = mode,
-                color = color,
-                name = them.Player.Name,
+                mode = lobby.Mode,
+                seat = i,
+                color = lobby.Mode == Modes.Three ? null : i % 2 == 0 ? "white" : "black",
+                // In two-player modes "name" is the opponent; "names" lists every seat in order.
+                name = seats.Count == 2 ? seats[1 - i].Player.Name : null,
+                names = names,
                 whiteArmy = white.Army?.ToCode(),
                 blackArmy = black.Army?.ToCode(),
             });
@@ -198,7 +263,8 @@ public sealed class GameServer
             Error(player, "Партия не идёт.");
             return;
         }
-        if (match.SideToMove != match.ColorOf(player))
+        int seat = match.SeatOf(player);
+        if (match.CurrentSeat != seat)
         {
             Error(player, "Сейчас ход соперника.");
             return;
@@ -209,45 +275,48 @@ public sealed class GameServer
             return;
         }
 
-        var echo = new Message { type = "move", action = action };
-        match.White.Send(echo);
-        match.Black.Send(echo);
-
-        if (match.Status != GameStatus.Ongoing)
-        {
-            var winner = match.Winner;
-            Finish(match, winner, match.Status switch
-            {
-                GameStatus.Checkmate => "checkmate",
-                GameStatus.Stalemate => "stalemate",
-                GameStatus.FiftyMoveRule => "fifty_moves",
-                GameStatus.ThreefoldRepetition => "repetition",
-                _ => "insufficient_material",
-            });
-        }
+        Broadcast(match, new Message { type = "move", action = action, seat = seat });
+        if (match.IsOver)
+            Finish(match, match.Reason);
     }
 
-    private void Resign(IPlayer player)
+    /// <summary>
+    /// A player resigned or lost the connection. In "Тройной трон" the other two play on and
+    /// get an "out" message; in every other mode the player's side loses.
+    /// </summary>
+    private void Leave(IPlayer player, string reason)
     {
-        if (_matches.TryGetValue(player, out var match) && !match.Finished)
-            Finish(match, match.ColorOf(match.Opponent(player)), "resign");
+        if (!_matches.TryGetValue(player, out var match) || match.Finished)
+            return;
+        int seat = match.SeatOf(player);
+        bool over = match.Leave(seat);
+        if (over)
+        {
+            Finish(match, reason);
+            return;
+        }
+        var notice = new Message { type = "out", seat = seat, reason = reason };
+        Broadcast(match, notice);
+        _matches.Remove(player);
     }
 
-    private void Finish(Match match, PieceColor? winner, string reason)
+    /// <summary>Sends a message to every player still in the match.</summary>
+    private void Broadcast(Match match, Message message)
+    {
+        foreach (var player in match.Players)
+            if (_matches.TryGetValue(player, out var current) && current == match)
+                player.Send(message);
+    }
+
+    private void Finish(Match match, string reason)
     {
         if (match.Finished)
             return;
         match.Finished = true;
-        var end = new Message
-        {
-            type = "end",
-            result = winner == null ? "draw" : winner == PieceColor.White ? "white" : "black",
-            reason = reason,
-        };
-        match.White.Send(end);
-        match.Black.Send(end);
-        _matches.Remove(match.White);
-        _matches.Remove(match.Black);
+        Broadcast(match, new Message { type = "end", result = match.Result, reason = reason });
+        foreach (var player in match.Players)
+            if (_matches.TryGetValue(player, out var current) && current == match)
+                _matches.Remove(player);
     }
 
     private static void Error(IPlayer player, string text) =>

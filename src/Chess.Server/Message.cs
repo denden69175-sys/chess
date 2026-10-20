@@ -11,13 +11,13 @@ namespace Chess.Server;
 public sealed class Message
 {
     // Client to server: hello, find, create, join, cancel, move, resign, ping.
-    // Server to client: welcome, waiting, room, start, move, end, error, pong.
+    // Server to client: welcome, waiting, room, start, move, out, end, error, pong.
     public string type { get; set; } = "";
 
     /// <summary>Player name (hello) or the opponent's name (start).</summary>
     public string? name { get; set; }
 
-    /// <summary>"classic", "army" or "timetravel".</summary>
+    /// <summary>"classic", "army", "timetravel", "5d", "team" or "three".</summary>
     public string? mode { get; set; }
 
     /// <summary>Private room code (room, join).</summary>
@@ -25,6 +25,19 @@ public sealed class Message
 
     /// <summary>A move ("e2e4", "e7e8q") or a jump ("jump:e4:2").</summary>
     public string? action { get; set; }
+
+    /// <summary>
+    /// The player's seat (start), the seat that moved (move) or the seat that left (out).
+    /// See <see cref="Match"/> for what each seat means in each mode.
+    /// </summary>
+    public int? seat { get; set; }
+
+    /// <summary>Every player's name in seat order, joined by '|' (start, waiting, room).</summary>
+    public string? names { get; set; }
+
+    /// <summary>Players gathered so far and players the game needs (waiting, room).</summary>
+    public int? count { get; set; }
+    public int? needed { get; set; }
 
     /// <summary>"white" or "black" (start).</summary>
     public string? color { get; set; }
@@ -35,7 +48,7 @@ public sealed class Message
     public string? whiteArmy { get; set; }
     public string? blackArmy { get; set; }
 
-    /// <summary>"white", "black" or "draw" (end).</summary>
+    /// <summary>"white", "black" or "draw" (end); in "three" mode "seat0", "seat1", "seat2" or "draw".</summary>
     public string? result { get; set; }
 
     /// <summary>Why the game ended: checkmate, stalemate, resign, opponent_left, draw rules.</summary>
