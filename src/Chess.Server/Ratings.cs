@@ -16,7 +16,7 @@ public sealed class RatingRecord
 
 /// <summary>
 /// Elo ratings of everyone who played a quick-match game, by the player id the client keeps.
-/// With a file path the table is saved after every rated game and read back on start, so the
+/// With a store the changed cards are saved after every rated game and read back on start, so the
 /// ratings live through a server restart. Not thread-safe: <see cref="GameServer"/> calls it
 /// under its lock.
 /// </summary>
@@ -25,24 +25,26 @@ public sealed class Ratings
     public const int Start = 1000;
     public const int K = 32;
 
-    private readonly Dictionary<string, RatingRecord> _records;
-    private readonly string? _path;
+    private const string Table = "ratings";
+    private readonly Dictionary<string, RatingRecord> _records = new();
+    private readonly IStore? _store;
 
-    public Ratings(string? path = null)
+    public Ratings(IStore? store = null)
     {
-        _path = path;
-        _records = new Dictionary<string, RatingRecord>();
-        if (path != null && File.Exists(path))
+        _store = store;
+        if (store == null)
+            return;
+        foreach (var (id, json) in store.Load(Table))
         {
             try
             {
-                var loaded = JsonSerializer.Deserialize(File.ReadAllText(path), RatingsJson.Default.DictionaryStringRatingRecord);
-                if (loaded != null)
-                    _records = loaded;
+                var record = JsonSerializer.Deserialize(json, RatingsJson.Default.RatingRecord);
+                if (record != null)
+                    _records[id] = record;
             }
             catch (JsonException)
             {
-                // A broken file must not stop the server; it is overwritten after the next rated game.
+                // One broken record must not stop the server; that player starts again at 1000.
             }
         }
     }
@@ -102,29 +104,14 @@ public sealed class Ratings
             else
                 record.Losses++;
         }
-        Save();
+        for (int i = 0; i < n; i++)
+            _store?.Save(Table, ids[i], JsonSerializer.Serialize(Get(ids[i]), RatingsJson.Default.RatingRecord));
         return deltas;
-    }
-
-    private void Save()
-    {
-        if (_path == null)
-            return;
-        try
-        {
-            string temp = _path + ".tmp";
-            File.WriteAllText(temp, JsonSerializer.Serialize(_records, RatingsJson.Default.DictionaryStringRatingRecord));
-            File.Move(temp, _path, true);
-        }
-        catch (IOException)
-        {
-            // Ratings stay in memory; the next save tries again.
-        }
     }
 }
 
 [JsonSourceGenerationOptions(WriteIndented = true)]
-[JsonSerializable(typeof(Dictionary<string, RatingRecord>))]
+[JsonSerializable(typeof(RatingRecord))]
 internal partial class RatingsJson : JsonSerializerContext
 {
 }

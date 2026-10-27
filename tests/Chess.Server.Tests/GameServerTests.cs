@@ -351,24 +351,26 @@ public class GameServerTests
     [Fact]
     public void RatingsSurviveARestart()
     {
-        string path = Path.Combine(Path.GetTempPath(), "ratings-" + Guid.NewGuid() + ".json");
+        string path = Path.Combine(Path.GetTempPath(), "ratings-" + Guid.NewGuid());
         try
         {
-            var server = new GameServer(new Random(1), new Ratings(path));
+            var store = new FileStore(path);
+            var server = new GameServer(new Random(1), new Ratings(store));
             var a = Known(server, "Аня");
             var b = Known(server, "Боря");
             server.Handle(a, new Message { type = "find", mode = Modes.Classic });
             server.Handle(b, new Message { type = "find", mode = Modes.Classic });
             server.Handle(a, new Message { type = "resign" });
 
-            var again = new GameServer(null, new Ratings(path));
+            store.Flush();
+            var again = new GameServer(null, new Ratings(new FileStore(path)));
             var a2 = Known(again, "Аня");
             Assert.Equal(984, a2.Last("rating").rating);
             Assert.Equal(1, a2.Last("rating").games);
         }
         finally
         {
-            File.Delete(path);
+            Directory.Delete(path, true);
         }
     }
 }

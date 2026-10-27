@@ -1,0 +1,20 @@
+# Render Blueprint: in the Render dashboard choose New > Blueprint and pick this repository.
+# It creates the online server and a PostgreSQL database for ratings and player progress.
+services:
+  - type: web
+    name: chess-server
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: chess-db
+          property: connectionString
+
+databases:
+  - name: chess-db
+    plan: free
+    databaseName: chess
+    user: chess
