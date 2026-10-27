@@ -513,6 +513,7 @@ public partial class ChessBoardView : MonoBehaviour
     private void Update()
     {
         PollNetwork();
+        UpdateSync();
         UpdateCelebration();
         if (_page == Page.FiveD)
             UpdateFiveD();

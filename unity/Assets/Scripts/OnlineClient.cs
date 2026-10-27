@@ -38,6 +38,11 @@ public class NetMessage
     public string names = "";
     public int count;
     public int needed;
+    public string data = "";
+    public int seq;
+    public string skin = "";
+    public bool duplicate;
+    public int coins;
 }
 
 /// <summary>

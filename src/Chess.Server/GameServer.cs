@@ -24,11 +24,13 @@ public sealed class GameServer
     private readonly Dictionary<IPlayer, Match> _matches = new();
     private readonly Random _random;
     private readonly Ratings _ratings;
+    private readonly ProgressBook _progress;
 
-    public GameServer(Random? random = null, Ratings? ratings = null)
+    public GameServer(Random? random = null, Ratings? ratings = null, ProgressBook? progress = null)
     {
         _random = random ?? new Random();
         _ratings = ratings ?? new Ratings();
+        _progress = progress ?? new ProgressBook(null, _random);
     }
 
     private sealed record Waiting(IPlayer Player, Army? Army);
@@ -85,6 +87,9 @@ public sealed class GameServer
                 case "ping":
                     player.Send(new Message { type = "pong" });
                     break;
+                case "progress":
+                    Progress(player, message);
+                    break;
                 default:
                     Error(player, "Неизвестная команда.");
                     break;
@@ -111,6 +116,42 @@ public sealed class GameServer
             return;
         player.Id = id;
         SendRating(player, _ratings.Get(id, player.Name));
+    }
+
+    // ---------------------------------------------------------------- progress
+
+    /// <summary>
+    /// "sync" with the game's copy in data, or "step" with one <see cref="ProgressAction"/>. Every
+    /// answer carries the server's copy and the last step it applied.
+    /// </summary>
+    private void Progress(IPlayer player, Message message)
+    {
+        if (player.Id == null)
+        {
+            Error(player, "Сначала нужно представиться (hello).");
+            return;
+        }
+        ChestResult? opened = null;
+        if (message.action == "step")
+        {
+            var action = ProgressBook.ParseAction(message.data);
+            if (action == null)
+            {
+                Error(player, "Не удалось прочитать изменение прогресса.");
+                return;
+            }
+            opened = _progress.Apply(player.Id, action, DateTime.UtcNow);
+        }
+        var save = _progress.Sync(player.Id, message.action == "sync" ? message.data : null);
+        player.Send(new Message
+        {
+            type = "progress",
+            data = ProgressBook.ToJson(save.Progress),
+            seq = save.Seq,
+            skin = opened?.Skin.Id,
+            duplicate = opened?.Duplicate,
+            coins = opened?.Coins,
+        });
     }
 
     private static void SendRating(IPlayer player, RatingRecord record) =>

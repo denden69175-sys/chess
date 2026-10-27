@@ -154,6 +154,10 @@ public partial class ChessBoardView
         {
             case "welcome":
                 SendPending();
+                SendProgressSync();
+                break;
+            case "progress":
+                ReceiveProgress(message);
                 break;
             case "rating":
                 SetRating(message);
@@ -216,6 +220,7 @@ public partial class ChessBoardView
             case OnlineClient.Closed:
                 _net?.Dispose();
                 _net = null;
+                ProgressConnectionLost();
                 if ((_page == Page.Game || _page == Page.FiveD) && _opponent == Opponent.Online && !GameFinished)
                     EndOnlineGame("", "connection");
                 else if ((_page == Page.Team || _page == Page.Three) && _partyOnline && !PartyFinished)

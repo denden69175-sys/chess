@@ -508,6 +508,28 @@ namespace Chess.Core
             return new ChestResult(duplicate, true, coins);
         }
 
+        /// <summary>
+        /// Opens one chest with a result rolled elsewhere (by the game while the server was out of
+        /// reach): the chest is used up and the skin is added, or paid out as a duplicate.
+        /// </summary>
+        public static ChestResult? OpenWith(PlayerProgress progress, ChestType chest, string skinId)
+        {
+            var skin = SkinCatalog.Find(skinId);
+            if (skin == null || SkinCatalog.IsDefault(skinId) || progress.chests.Length < 3 || progress.chests[(int)chest] <= 0)
+                return null;
+            progress.chests[(int)chest]--;
+            progress.chestsOpened++;
+            progress.sinceLegendary = skin.Rarity == Rarity.Legendary ? 0 : progress.sinceLegendary + 1;
+            if (!progress.Owns(skinId))
+            {
+                progress.owned.Add(skinId);
+                return new ChestResult(skin, false, 0);
+            }
+            int coins = DuplicateCoins(skin.Rarity);
+            progress.coins += coins;
+            return new ChestResult(skin, true, coins);
+        }
+
         /// <summary>Picks a skin from the collection to wear. Returns false for a skin the player does not own.</summary>
         public static bool Equip(PlayerProgress progress, string skinId)
         {

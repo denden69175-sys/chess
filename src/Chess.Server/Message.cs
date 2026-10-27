@@ -10,8 +10,8 @@ namespace Chess.Server;
 /// </summary>
 public sealed class Message
 {
-    // Client to server: hello, top, find, create, join, cancel, move, resign, ping.
-    // Server to client: welcome, rating, top, waiting, room, start, move, out, end, error, pong.
+    // Client to server: hello, top, find, create, join, cancel, move, resign, ping, progress.
+    // Server to client: welcome, rating, top, waiting, room, start, move, out, end, error, pong, progress.
     public string type { get; set; } = "";
 
     /// <summary>Player name (hello) or the opponent's name (start).</summary>
@@ -70,6 +70,20 @@ public sealed class Message
 
     /// <summary>The best players (top): one per line, "name\trating\tgames\twins".</summary>
     public string? list { get; set; }
+
+    /// <summary>
+    /// JSON inside the message (progress): the game's progress (sync, and every answer) or one
+    /// change to it (step).
+    /// </summary>
+    public string? data { get; set; }
+
+    /// <summary>The last progress step the server has applied (progress).</summary>
+    public int? seq { get; set; }
+
+    /// <summary>What an opened chest gave (progress after an open): the skin, whether it was a duplicate, and its coins.</summary>
+    public string? skin { get; set; }
+    public bool? duplicate { get; set; }
+    public int? coins { get; set; }
 
     /// <summary>Human-readable text for errors, in Russian.</summary>
     public string? message { get; set; }

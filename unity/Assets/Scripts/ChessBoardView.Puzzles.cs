@@ -142,8 +142,8 @@ public partial class ChessBoardView
             _pzSolved = true;
             var before = ClaimableIds();
             bool firstSolve = !_progress.solved.Contains(_puzzle.Number);
-            int coins = Rewards.RecordPuzzle(_progress, _puzzle);
-            SaveProgress();
+            int coins = firstSolve ? Rewards.PuzzleCoins(_progress, _puzzle) : 0;
+            Step(new ProgressAction { kind = ProgressAction.Puzzle, number = _puzzle.Number });
             _pzNote = coins > 0 ? $"Мат! Задача решена: +{coins} монет." : firstSolve ? "Мат! Задача решена, но монеты ушли на подсказки." : "Мат! Задача решена.";
             _celebrateAfter = Time.time + 0.6f;
             CelebratePuzzle(_puzzle, coins, firstSolve);
@@ -195,8 +195,7 @@ public partial class ChessBoardView
         {
             // Each hint costs a third of the coins; a hint already on the board is not charged again.
             int before = Rewards.PuzzleCoins(_progress, _puzzle);
-            Rewards.UseHint(_progress, _puzzle);
-            SaveProgress();
+            Step(new ProgressAction { kind = ProgressAction.Hint, number = _puzzle.Number });
             _pzHint = true;
             if (!_progress.solved.Contains(_puzzle.Number))
             {

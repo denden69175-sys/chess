@@ -114,9 +114,9 @@ public partial class ChessBoardView
         var card = _celebration!;
         if (card.Quest != null)
         {
-            if (Rewards.Claim(_progress, card.Quest))
+            if (Rewards.CanClaim(_progress, card.Quest))
             {
-                SaveProgress();
+                Step(new ProgressAction { kind = ProgressAction.Claim, item = card.Quest.Id });
                 ShowToast("Получено: " + card.Quest.Reward + ".");
             }
         }

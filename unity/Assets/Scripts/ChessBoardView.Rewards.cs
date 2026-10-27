@@ -135,18 +135,8 @@ public partial class ChessBoardView
                 _progress = new PlayerProgress();
             }
         }
-        if (_progress.chests == null || _progress.chests.Length < 3)
-            System.Array.Resize(ref _progress.chests, 3);
-        _progress.owned ??= new List<string>();
-        _progress.modes ??= new List<string>();
-        _progress.solved ??= new List<int>();
-        _progress.daily ??= new List<QuestState>();
-        _progress.achievements ??= new List<string>();
-        _progress.totals ??= new int[0];
-        if (!_progress.Owns(_progress.pieces))
-            _progress.pieces = SkinCatalog.DefaultPieces;
-        if (!_progress.Owns(_progress.board))
-            _progress.board = SkinCatalog.DefaultBoard;
+        ProgressSync.Repair(_progress);
+        LoadSteps();
         Rewards.RefreshDaily(_progress, System.DateTime.Now, _playerId);
         SaveProgress();
     }
@@ -174,8 +164,7 @@ public partial class ChessBoardView
     private void ReportGame(GameReport report)
     {
         var before = ClaimableIds();
-        Rewards.Record(_progress, report);
-        SaveProgress();
+        Step(ProgressAction.ForGame(report));
         // Let the game's result card show first.
         _celebrateAfter = Time.time + 1.6f;
         CelebrateNewQuests(before);
@@ -340,7 +329,7 @@ public partial class ChessBoardView
 
     private void DrawRewards(float width, float height)
     {
-        bool window = _opened != null;
+        bool window = _opened != null || _awaitingChest.HasValue;
         Theme.InputBlocked = window;
         BackButton();
 
@@ -379,6 +368,8 @@ public partial class ChessBoardView
         Theme.InputBlocked = false;
         if (_opened != null)
             DrawOpenedChest(width, height);
+        else if (_awaitingChest.HasValue)
+            DrawAwaitingChest(width, height);
     }
 
     // Quests.
@@ -431,8 +422,7 @@ public partial class ChessBoardView
         }
         else if (Theme.Button(button, "Забрать", Theme.Green, 17, ready))
         {
-            Rewards.Claim(_progress, quest);
-            SaveProgress();
+            Step(new ProgressAction { kind = ProgressAction.Claim, item = quest.Id });
             Sfx.Play(Sfx.Win);
             ShowToast("Получено: " + quest.Reward + ".");
         }
@@ -478,17 +468,12 @@ public partial class ChessBoardView
 
         if (Theme.Button(new Rect(rect.x + 12, rect.y + 170, rect.width - 24, 46), "Открыть", Theme.Green, 18, have > 0))
         {
-            _opened = Rewards.Open(_progress, chest, new System.Random());
-            _openedChest = chest;
-            _openedAt = Time.time;
-            SaveProgress();
-            Sfx.Play(Sfx.Jump);
+            OpenChest(chest);
         }
         int price = Rewards.Price(chest);
         if (Theme.Button(new Rect(rect.x + 12, rect.y + 224, rect.width - 24, 42), $"Купить за {price}", Theme.Blue, 15, _progress.coins >= price))
         {
-            Rewards.Buy(_progress, chest);
-            SaveProgress();
+            Step(new ProgressAction { kind = ProgressAction.Buy, number = (int)chest });
             Sfx.Play(Sfx.Click);
         }
     }
@@ -540,8 +525,7 @@ public partial class ChessBoardView
         float buttonWidth = (cardWidth - 60) / 2;
         if (!opened.Duplicate && Theme.Button(new Rect(card.x + 20, card.yMax - 84, buttonWidth, 54), "Надеть", rarityColor, 19))
         {
-            Rewards.Equip(_progress, opened.Skin.Id);
-            SaveProgress();
+            Step(new ProgressAction { kind = ProgressAction.Equip, item = opened.Skin.Id });
             ApplySkins();
             _opened = null;
         }
@@ -610,8 +594,7 @@ public partial class ChessBoardView
 
         if (owned && !worn && !Theme.InputBlocked && GUI.Button(rect, GUIContent.none, GUIStyle.none))
         {
-            Rewards.Equip(_progress, skin.Id);
-            SaveProgress();
+            Step(new ProgressAction { kind = ProgressAction.Equip, item = skin.Id });
             ApplySkins();
             Sfx.Play(Sfx.Click);
         }
