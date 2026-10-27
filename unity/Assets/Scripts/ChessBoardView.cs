@@ -469,9 +469,12 @@ public partial class ChessBoardView : MonoBehaviour
         MaybeStartBot();
     }
 
+    private bool BotShouldMove =>
+        _page == Page.Game && _opponent == Opponent.Bot && !_game.IsOver && _game.Current.SideToMove != _human;
+
     private void MaybeStartBot()
     {
-        if (_opponent != Opponent.Bot || _game.IsOver || _game.Current.SideToMove == _human)
+        if (!BotShouldMove)
             return;
         var bot = new Bot(_level);
         _botCancel = new CancellationTokenSource();
@@ -487,6 +490,15 @@ public partial class ChessBoardView : MonoBehaviour
             var position = _game.Current;
             _botTask = Task.Run(() => bot.ChooseMove(position, token)?.ToUci(), token);
         }
+    }
+
+    private void PlayFallbackBotMove()
+    {
+        if (!BotShouldMove)
+            return;
+        var moves = _game.Active.LegalMoves;
+        if (moves.Count > 0)
+            Apply(moves[Random.Range(0, moves.Count)]);
     }
 
     private void CancelBot()
@@ -521,10 +533,23 @@ public partial class ChessBoardView : MonoBehaviour
         {
             var task = _botTask;
             _botTask = null;
-            if (task.Status == TaskStatus.RanToCompletion && task.Result != null)
-                ApplyText(task.Result);
-            else if (task.IsFaulted)
-                Debug.LogException(task.Exception);
+            bool played = task.Status == TaskStatus.RanToCompletion && task.Result != null && ApplyText(task.Result);
+            if (!played)
+            {
+                // The search failed or its move did not fit the board: never leave the game waiting
+                // on a bot that will not move, play any legal move instead.
+                if (task.IsFaulted)
+                    Debug.LogException(task.Exception);
+                else
+                    Debug.LogWarning($"Bot gave no usable move ({task.Status}, {task.Result ?? "null"}); playing a fallback move.");
+                PlayFallbackBotMove();
+            }
+        }
+        else if (BotShouldMove && _botTask == null)
+        {
+            // Whatever stopped the bot (a cancelled search, a page change), it is still its turn.
+            Debug.LogWarning("Bot's turn with no search running; starting one.");
+            MaybeStartBot();
         }
 
         if (GameFinished && !_endShown && Time.time >= _endAt)
