@@ -82,6 +82,7 @@ namespace Chess.Core
         private readonly List<Timeline> _timelines = new List<Timeline>();
         private readonly List<string> _log = new List<string>();
         private readonly List<string> _russianLog = new List<string>();
+        private readonly List<string> _actions = new List<string>();
         private readonly Stack<UndoRecord> _undo = new Stack<UndoRecord>();
         private readonly int[] _jumpsLeft = { JumpsPerPlayer, JumpsPerPlayer };
         private readonly int[] _ownMoves = { 0, 0 };
@@ -112,6 +113,9 @@ namespace Chess.Core
         public IReadOnlyList<string> RussianLog => _russianLog;
 
         public int ActionCount => _log.Count;
+
+        /// <summary>Every action so far in the form <see cref="TryPlay"/> takes ("e2e4", "jump:e4:2").</summary>
+        public IReadOnlyList<string> Actions => _actions;
 
         public int JumpsLeft(PieceColor color) => _jumpsLeft[(int)color];
 
@@ -159,6 +163,7 @@ namespace Chess.Core
             _ownMoves[(int)color]++;
             _log.Add(san);
             _russianLog.Add(russian);
+            _actions.Add(move.ToUci());
             _undo.Push(new UndoRecord(false, _active, 0));
         }
 
@@ -231,6 +236,7 @@ namespace Chess.Core
             _ownMoves[(int)color]++;
             _log.Add($"{Notation.Letter(piece.Type, NotationLanguage.English)}{jump.From}@-{jump.StepsBack}");
             _russianLog.Add($"{Notation.Letter(piece.Type, NotationLanguage.Russian)}{jump.From} «{jump.StepsBack}");
+            _actions.Add(jump.ToString());
         }
 
         /// <summary>Plays a move ("e2e4") or a jump ("jump:e4:2") given as text, as the server receives them.</summary>
@@ -272,6 +278,7 @@ namespace Chess.Core
             var record = _undo.Pop();
             _log.RemoveAt(_log.Count - 1);
             _russianLog.RemoveAt(_russianLog.Count - 1);
+            _actions.RemoveAt(_actions.Count - 1);
             if (record.WasJump)
             {
                 var color = _timelines[record.Timeline].Game.Current.SideToMove;

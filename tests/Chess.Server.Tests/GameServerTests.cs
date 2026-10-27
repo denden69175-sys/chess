@@ -267,7 +267,7 @@ public class GameServerTests
     private static FakePlayer Known(GameServer server, string name)
     {
         var player = new FakePlayer(name);
-        server.Handle(player, new Message { type = "hello", name = name, id = "id-" + name + "-0000" });
+        server.Handle(player, new Message { type = "hello", name = name, id = "id-" + name + "-0000", secret = "test-secret-0000000000" });
         return player;
     }
 
@@ -344,7 +344,7 @@ public class GameServerTests
         server.Handle(seats[2], new Message { type = "resign" });
         Assert.Equal(16, seats[0].Last("end").delta);
         // The first to leave gets no "end", but the rating still counts the loss.
-        server.Handle(seats[1], new Message { type = "hello", name = "r1", id = "id-r1-0000" });
+        server.Handle(seats[1], new Message { type = "hello", name = "r1", id = "id-r1-0000", secret = "test-secret-0000000000" });
         Assert.Equal(992, seats[1].Last("rating").rating);
     }
 

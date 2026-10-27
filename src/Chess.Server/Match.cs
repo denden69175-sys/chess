@@ -53,6 +53,9 @@ public sealed class Match
     public Army? BlackArmy { get; }
     public bool Finished { get; set; }
 
+    /// <summary>Actions played so far.</summary>
+    public int Played { get; private set; }
+
     /// <summary>The game counts for the rating (quick match, every player known by id).</summary>
     public bool Rated { get; init; }
 
@@ -133,6 +136,30 @@ public sealed class Match
     /// <summary>The colour a seat plays for in two-player and team modes.</summary>
     public PieceColor ColorOf(int seat) => seat % 2 == 0 ? PieceColor.White : PieceColor.Black;
 
+    /// <summary>Pieces the seat took (all taken pieces for seat -1, a game everyone at one screen played).</summary>
+    public int CapturesBy(int seat)
+    {
+        if (_three != null)
+            return seat >= 0 ? _three.CapturedBy(seat).Count : Enumerable.Range(0, ThreeGame.PlayerCount).Sum(p => _three.CapturedBy(p).Count);
+        if (_team != null)
+            return seat >= 0 ? _team.CapturedBy(seat).Count : Enumerable.Range(0, TeamGame.Players).Sum(p => _team.CapturedBy(p).Count);
+        var taken = _multiverse != null ? _multiverse.CapturedPieces : _timeTravel?.CapturedPieces() ?? _game!.CapturedPieces();
+        return taken.Count(p => seat < 0 || p.Color != ColorOf(seat));
+    }
+
+    /// <summary>Pawns the seat promoted on the board that decided the game (two-player board modes only).</summary>
+    public int PromotionsBy(int seat)
+    {
+        var game = _timeTravel?.Active ?? _game;
+        if (game == null)
+            return 0;
+        int count = 0;
+        for (int i = 0; i < game.Moves.Count; i++)
+            if (game.Moves[i].Promotion.HasValue && (seat < 0 || game.Positions[i].SideToMove == ColorOf(seat)))
+                count++;
+        return count;
+    }
+
     /// <summary>
     /// A player gave up or left. In "Тройной трон" their army leaves the board and the other two
     /// play on (returns false while the game goes on); elsewhere their side loses at once.
@@ -151,8 +178,14 @@ public sealed class Match
     /// <summary>Plays the action if it is legal; returns false otherwise and changes nothing.</summary>
     public bool TryPlay(string action)
     {
-        if (IsOver)
+        if (IsOver || !Play(action))
             return false;
+        Played++;
+        return true;
+    }
+
+    private bool Play(string action)
+    {
         if (_multiverse != null)
             return PlayTurn(action);
         if (_timeTravel != null)

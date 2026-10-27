@@ -57,6 +57,9 @@ public sealed class Message
     /// <summary>The id the client keeps between launches (hello); the rating is stored under it.</summary>
     public string? id { get; set; }
 
+    /// <summary>The secret key the client made with its id (hello); proves the id is its own.</summary>
+    public string? secret { get; set; }
+
     /// <summary>The player's rating, games and wins (rating, and end of a rated game).</summary>
     public int? rating { get; set; }
     public int? games { get; set; }

@@ -44,20 +44,26 @@ public sealed class SocketPlayer : IPlayer
         }
     }
 
+    /// <summary>The longest message we take (a long game's moves fit easily); a longer one ends the connection.</summary>
+    public const int MaxMessageBytes = 256 * 1024;
+
     public async IAsyncEnumerable<string> ReadMessagesAsync([EnumeratorCancellation] CancellationToken cancellation)
     {
         var buffer = new byte[4096];
-        var text = new StringBuilder();
+        var bytes = new List<byte>();
         while (_socket.State == WebSocketState.Open)
         {
             var result = await _socket.ReceiveAsync(buffer, cancellation);
             if (result.MessageType == WebSocketMessageType.Close)
                 yield break;
-            text.Append(Encoding.UTF8.GetString(buffer, 0, result.Count));
+            bytes.AddRange(new ArraySegment<byte>(buffer, 0, result.Count));
+            if (bytes.Count > MaxMessageBytes)
+                yield break;
             if (result.EndOfMessage)
             {
-                yield return text.ToString();
-                text.Clear();
+                // Decoded whole, so a letter split between two reads stays intact.
+                yield return Encoding.UTF8.GetString(bytes.ToArray());
+                bytes.Clear();
             }
         }
     }

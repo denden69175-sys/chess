@@ -161,10 +161,32 @@ public partial class ChessBoardView
     // ---------------------------------------------------------------- game reports
 
     /// <summary>Counts a finished game for the quests and tells the player when one is done.</summary>
-    private void ReportGame(GameReport report)
+    /// <summary>
+    /// Counts a finished game. <paramref name="actions"/> are its moves, one per line, and
+    /// <paramref name="seat"/> the player's seat (-1 when everyone played at this screen): the
+    /// server replays them and counts only what it sees. Online games are counted by the server
+    /// itself, so they are only shown here and not sent.
+    /// </summary>
+    private void ReportGame(GameReport report, IEnumerable<string> actions, int seat)
     {
         var before = ClaimableIds();
-        Step(ProgressAction.ForGame(report));
+        var action = ProgressAction.ForGame(report);
+        if (report.Online)
+        {
+            ProgressSync.Apply(_progress, action, _playerId, System.DateTime.Now);
+            SaveProgress();
+        }
+        else
+        {
+            action.actions = string.Join("\n", actions);
+            action.seat = seat;
+            if (report.Mode == "army")
+            {
+                action.whiteArmy = (_whiteArmy ?? Army.Classic).ToCode();
+                action.blackArmy = (_blackArmy ?? Army.Classic).ToCode();
+            }
+            Step(action);
+        }
         // Let the game's result card show first.
         _celebrateAfter = Time.time + 1.6f;
         CelebrateNewQuests(before);
@@ -187,7 +209,7 @@ public partial class ChessBoardView
             Online = online,
             Captures = _game.CapturedPieces().Count(p => sameDevice || p.Color != _human),
             Promotions = promotions,
-        });
+        }, _game.Actions, sameDevice ? -1 : _human == PieceColor.White ? 0 : 1);
     }
 
     private void ReportFiveDGame()
@@ -200,7 +222,7 @@ public partial class ChessBoardView
             Bot = _opponent == Opponent.Bot ? _level : (BotLevel?)null,
             Online = _opponent == Opponent.Online,
             Captures = _md.CapturedPieces.Count(p => sameDevice || p.Color != _human),
-        });
+        }, _md.History.Select(turn => string.Join(";", turn.Select(m => m.ToString()))), sameDevice ? -1 : _human == PieceColor.White ? 0 : 1);
     }
 
     private void ReportPartyGame(bool? humanWon)
@@ -215,7 +237,8 @@ public partial class ChessBoardView
             Won = humanWon,
             Online = _partyOnline,
             Captures = captures,
-        });
+        }, team ? _team.Game.Moves.Select(m => m.ToUci()) : _three.History.Select(m => m.ToString()),
+            PartyHotSeat ? -1 : team ? _teamSeat : _threeSeat);
     }
 
     // ---------------------------------------------------------------- skins

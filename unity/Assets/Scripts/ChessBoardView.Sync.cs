@@ -6,9 +6,9 @@ using UnityEngine;
 /// <summary>
 /// Keeps the player's progress on the server. Every change (a finished game, a claimed quest, a
 /// chest) is a <see cref="ProgressAction"/>: the game applies it at once and queues it, and the
-/// queue goes to the server one step at a time. The server applies the same steps, rolls chests
-/// itself while it is reachable, and its copy replaces ours once the queue is empty. Without a
-/// server everything works as before and the queue waits for the next connection.
+/// queue goes to the server one step at a time. The server replays games and puzzles before they
+/// count, rolls every chest itself, and its copy replaces ours once the queue is empty. Without a
+/// server the queue waits for the next connection; chests need the server.
 /// </summary>
 public partial class ChessBoardView
 {
@@ -25,6 +25,7 @@ public partial class ChessBoardView
     /// <summary>The connection the server answered our sync on; a new connection must sync again.</summary>
     private OnlineClient? _syncedOn;
     private bool _stepInFlight;
+    private float _stepSentAt;
     private float _lastConnectTry = -100;
     private ChestType? _awaitingChest;
     private float _awaitingSince;
@@ -75,15 +76,16 @@ public partial class ChessBoardView
         if (!ProgressOnline || _stepInFlight || _steps.steps.Count == 0)
             return;
         _stepInFlight = true;
+        _stepSentAt = Time.time;
         _net!.Send(new NetMessage { type = "progress", action = "step", data = JsonUtility.ToJson(_steps.steps[0]) });
     }
 
-    /// <summary>Sent right after hello: our copy, which the server keeps only if it has none yet.</summary>
+    /// <summary>Sent right after hello: asks for the server's copy. The server never takes ours, which anyone could edit.</summary>
     private void SendProgressSync()
     {
         _syncedOn = null;
         _stepInFlight = false;
-        _net?.Send(new NetMessage { type = "progress", action = "sync", data = JsonUtility.ToJson(_progress) });
+        _net?.Send(new NetMessage { type = "progress", action = "sync" });
     }
 
     /// <summary>The server's answer: drop the steps it has, and take its copy once nothing is left to send.</summary>
@@ -156,6 +158,12 @@ public partial class ChessBoardView
             _awaitingChest = null;
             ShowToast("Сервер не ответил, сундук не открылся. Попробуйте ещё раз.");
         }
+        // A step the server did not answer (it was busy, or dropped it) is sent again.
+        if (_stepInFlight && Time.time - _stepSentAt > 10)
+        {
+            _stepInFlight = false;
+            SendNextStep();
+        }
         if (_net != null || Time.time - _lastConnectTry < ReconnectEvery || _playerId.Length == 0)
             return;
         _lastConnectTry = Time.time;
@@ -171,26 +179,19 @@ public partial class ChessBoardView
     }
 
     /// <summary>
-    /// Opens a chest: with the server on line it rolls the chest and the result arrives in its
-    /// answer; without one the game rolls and the server is told later.
+    /// Opens a chest. Only the server rolls chests, so a chest cannot be "rolled again" by
+    /// restarting the game; the result arrives in its answer.
     /// </summary>
     private void OpenChest(ChestType chest)
     {
-        if (ProgressOnline)
+        if (!ProgressOnline)
         {
-            _awaitingChest = chest;
-            _awaitingSince = Time.time;
-            Step(new ProgressAction { kind = ProgressAction.Open, number = (int)chest }, applied: true);
-            Sfx.Play(Sfx.Jump);
+            ShowToast("Сундуки открываются только при подключении к серверу.");
             return;
         }
-        var result = Rewards.Open(_progress, chest, new System.Random());
-        if (result == null)
-            return;
-        Step(new ProgressAction { kind = ProgressAction.Open, number = (int)chest, skin = result.Skin.Id }, applied: true);
-        _opened = result;
-        _openedChest = chest;
-        _openedAt = Time.time;
+        _awaitingChest = chest;
+        _awaitingSince = Time.time;
+        Step(new ProgressAction { kind = ProgressAction.Open, number = (int)chest }, applied: true);
         Sfx.Play(Sfx.Jump);
     }
 

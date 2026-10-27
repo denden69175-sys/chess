@@ -28,6 +28,7 @@ public class NetMessage
     public string reason = "";
     public string message = "";
     public string id = "";
+    public string secret = "";
     public int rating;
     public int games;
     public int wins;

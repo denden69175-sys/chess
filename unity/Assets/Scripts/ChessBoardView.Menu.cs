@@ -87,6 +87,12 @@ public partial class ChessBoardView
             _playerId = System.Guid.NewGuid().ToString("N");
             PlayerPrefs.SetString("playerId", _playerId);
         }
+        _playerSecret = PlayerPrefs.GetString("playerSecret", "");
+        if (_playerSecret.Length < 16)
+        {
+            _playerSecret = System.Guid.NewGuid().ToString("N") + System.Guid.NewGuid().ToString("N");
+            PlayerPrefs.SetString("playerSecret", _playerSecret);
+        }
         var army = Army.FromCode(PlayerPrefs.GetString("army", ""));
         SetEditArmy(army != null && army.Pieces.Count > 0 ? army : Army.Classic);
     }

@@ -6,7 +6,8 @@ namespace Chess.Core
 {
     /// <summary>
     /// One change to a player's progress, as the game sends it to the server. The game applies it
-    /// to its own copy too, so the server and the game run the same rules on the same steps.
+    /// to its own copy at once; the server checks it (a game or a puzzle is replayed move by move)
+    /// before it counts, and the server's copy is the one that stays.
     /// Public fields so Unity's JsonUtility and the server's JSON both read and write it.
     /// </summary>
     [Serializable]
@@ -44,10 +45,17 @@ namespace Chess.Core
         public string item = "";
 
         /// <summary>
-        /// For a chest opened while the server was out of reach: the skin that came out. The server
-        /// takes it as it is; with the server on line, chests are rolled by the server only.
+        /// Every move of the game or puzzle, one per line, in the form the online server takes
+        /// (a 5D turn is its moves joined by ';'). The server replays them to check the result.
         /// </summary>
-        public string skin = "";
+        public string actions = "";
+
+        /// <summary>The player's seat in the game (0 = White, 1 = Black; party modes as on the server), -1 when everyone at the screen played.</summary>
+        public int seat = -1;
+
+        /// <summary>Both armies in "Своя армия", as <see cref="Army.ToCode"/> writes them.</summary>
+        public string whiteArmy = "";
+        public string blackArmy = "";
 
         public static ProgressAction ForGame(GameReport report) => new ProgressAction
         {
@@ -76,8 +84,8 @@ namespace Chess.Core
     {
         /// <summary>
         /// Applies one step. Returns what a chest gave (open), otherwise null. A step the rules do
-        /// not allow (no coins, a quest not finished) changes nothing. <paramref name="random"/>
-        /// rolls chests and is needed only for an open without <see cref="ProgressAction.skin"/>.
+        /// not allow (no coins, a quest not finished, no chest) changes nothing. Games and puzzles
+        /// are taken as they are; the server checks them before calling this.
         /// </summary>
         public static ChestResult? Apply(PlayerProgress progress, ProgressAction action, string playerId, DateTime today, Random? random = null)
         {
@@ -108,8 +116,6 @@ namespace Chess.Core
                 case ProgressAction.Open:
                     if (!IsChest(action.number))
                         break;
-                    if (action.skin.Length > 0)
-                        return Rewards.OpenWith(progress, (ChestType)action.number, action.skin);
                     return Rewards.Open(progress, (ChestType)action.number, random ?? new Random());
                 case ProgressAction.Equip:
                     Rewards.Equip(progress, action.item);

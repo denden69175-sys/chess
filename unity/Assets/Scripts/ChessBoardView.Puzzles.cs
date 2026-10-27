@@ -19,6 +19,8 @@ public partial class ChessBoardView
     private Square? _pzSelected;
     private readonly List<Move> _pzTargets = new List<Move>();
     private Move? _pzLast;
+    /// <summary>Every move on the puzzle board so far, sent with the solution so the server can check it.</summary>
+    private readonly List<string> _pzLine = new List<string>();
     private Square? _pzWrong;
     private float _pzWrongAt = -100;
     private float _pzInfoAt = -100;
@@ -90,6 +92,7 @@ public partial class ChessBoardView
         _pzSelected = null;
         _pzTargets.Clear();
         _pzLast = null;
+        _pzLine.Clear();
         _pzWrong = null;
         _pzReplyAt = -1;
         _pzSolved = false;
@@ -110,6 +113,7 @@ public partial class ChessBoardView
             return;
         bool capture = _pzPosition[defence.Value.To].HasValue;
         _pzPosition = _pzPosition.Apply(defence.Value);
+        _pzLine.Add(defence.Value.ToUci());
         _pzLast = defence;
         _pzHint = false;
         Sfx.Play(capture ? Sfx.Capture : Sfx.Move);
@@ -136,6 +140,7 @@ public partial class ChessBoardView
         var move = good[0];
         bool capture = _pzPosition[move.To].HasValue;
         _pzPosition = _pzPosition.Apply(move);
+        _pzLine.Add(move.ToUci());
         _pzLast = move;
         _pzHint = false;
         _pzNote = "";
@@ -145,7 +150,7 @@ public partial class ChessBoardView
             var before = ClaimableIds();
             bool firstSolve = !_progress.solved.Contains(_puzzle.Number);
             int coins = firstSolve ? Rewards.PuzzleCoins(_progress, _puzzle) : 0;
-            Step(new ProgressAction { kind = ProgressAction.Puzzle, number = _puzzle.Number });
+            Step(new ProgressAction { kind = ProgressAction.Puzzle, number = _puzzle.Number, actions = string.Join("\n", _pzLine) });
             _pzNote = coins > 0 ? $"Мат! Задача решена: +{coins} монет." : firstSolve ? "Мат! Задача решена, но монеты ушли на подсказки." : "Мат! Задача решена.";
             _celebrateAfter = Time.time + 0.6f;
             CelebratePuzzle(_puzzle, coins, firstSolve);

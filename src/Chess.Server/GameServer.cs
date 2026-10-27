@@ -25,12 +25,32 @@ public sealed class GameServer
     private readonly Random _random;
     private readonly Ratings _ratings;
     private readonly ProgressBook _progress;
+    private readonly PlayerKeys _keys;
+    private readonly Dictionary<IPlayer, Allowance> _allowances = new();
+    private readonly Dictionary<string, int> _pairGames = new();
+    private string _pairDay = "";
 
-    public GameServer(Random? random = null, Ratings? ratings = null, ProgressBook? progress = null)
+    /// <summary>Messages a player may send per second on average, and in one burst.</summary>
+    public const double MessagesPerSecond = 20;
+    public const double MessageBurst = 100;
+
+    /// <summary>Rated games the same two players may play against each other per day.</summary>
+    public const int RatedGamesPerPair = 3;
+
+    public GameServer(Random? random = null, Ratings? ratings = null, ProgressBook? progress = null, PlayerKeys? keys = null)
     {
         _random = random ?? new Random();
         _ratings = ratings ?? new Ratings();
         _progress = progress ?? new ProgressBook(null, _random);
+        _keys = keys ?? new PlayerKeys();
+    }
+
+    /// <summary>How many messages a player may still send now; refills with time.</summary>
+    private sealed class Allowance
+    {
+        public double Left = MessageBurst;
+        public DateTime At = DateTime.UtcNow;
+        public bool Warned;
     }
 
     private sealed record Waiting(IPlayer Player, Army? Army);
@@ -58,6 +78,8 @@ public sealed class GameServer
     {
         lock (_gate)
         {
+            if (!Allow(player))
+                return;
             switch (message.type)
             {
                 case "hello":
@@ -103,7 +125,33 @@ public sealed class GameServer
         {
             RemoveWaiting(player);
             Leave(player, "opponent_left");
+            _allowances.Remove(player);
         }
+    }
+
+    /// <summary>
+    /// Spends one message from the player's allowance. A client that floods the server is told
+    /// once and its extra messages are dropped until the allowance refills.
+    /// </summary>
+    private bool Allow(IPlayer player)
+    {
+        if (!_allowances.TryGetValue(player, out var allowance))
+            _allowances[player] = allowance = new Allowance();
+        var now = DateTime.UtcNow;
+        allowance.Left = Math.Min(MessageBurst, allowance.Left + (now - allowance.At).TotalSeconds * MessagesPerSecond);
+        allowance.At = now;
+        if (allowance.Left >= 1)
+        {
+            allowance.Left--;
+            allowance.Warned = false;
+            return true;
+        }
+        if (!allowance.Warned)
+        {
+            allowance.Warned = true;
+            Error(player, "Слишком много сообщений, подождите немного.");
+        }
+        return false;
     }
 
     // ---------------------------------------------------------------- rating
@@ -114,6 +162,17 @@ public sealed class GameServer
         string id = (message.id ?? "").Trim();
         if (id.Length < 8 || id.Length > 64 || !id.All(c => char.IsLetterOrDigit(c) || c == '-'))
             return;
+        // The id is known to others (it travels in every hello); the secret key proves it is ours.
+        if (!PlayerKeys.IsWellFormed(message.secret))
+        {
+            Error(player, "Обновите игру: эта версия не может войти в профиль.");
+            return;
+        }
+        if (!_keys.Check(id, message.secret!))
+        {
+            Error(player, "Этот профиль принадлежит другому игроку.");
+            return;
+        }
         player.Id = id;
         SendRating(player, _ratings.Get(id, player.Name));
     }
@@ -142,7 +201,7 @@ public sealed class GameServer
             }
             opened = _progress.Apply(player.Id, action, DateTime.UtcNow);
         }
-        var save = _progress.Sync(player.Id, message.action == "sync" ? message.data : null);
+        var save = _progress.Sync(player.Id);
         player.Send(new Message
         {
             type = "progress",
@@ -202,6 +261,30 @@ public sealed class GameServer
             }
         }
         return _ratings.Apply(ids, scores, strength);
+    }
+
+    /// <summary>
+    /// Counts a rated game for every pair of opponents and says whether all of them are still
+    /// under <see cref="RatedGamesPerPair"/> today, so two friends (or one person with two
+    /// phones) cannot pump a rating by playing each other over and over.
+    /// </summary>
+    private bool CountPairs(List<string> ids)
+    {
+        string today = DateTime.UtcNow.ToString("yyyy-MM-dd");
+        if (_pairDay != today)
+        {
+            _pairDay = today;
+            _pairGames.Clear();
+        }
+        var pairs = new List<string>();
+        for (int i = 0; i < ids.Count; i++)
+            for (int j = i + 1; j < ids.Count; j++)
+                pairs.Add(string.CompareOrdinal(ids[i], ids[j]) < 0 ? ids[i] + "|" + ids[j] : ids[j] + "|" + ids[i]);
+        if (pairs.Any(p => _pairGames.GetValueOrDefault(p) >= RatedGamesPerPair))
+            return false;
+        foreach (var pair in pairs)
+            _pairGames[pair] = _pairGames.GetValueOrDefault(pair) + 1;
+        return true;
     }
 
     // ---------------------------------------------------------------- matchmaking
@@ -343,7 +426,10 @@ public sealed class GameServer
 
         var white = seats[0];
         var black = seats[1];
-        var match = new Match(lobby.Mode, seats.Select(s => s.Player).ToList(), white.Army, black.Army) { Rated = IsRated(lobby) };
+        var match = new Match(lobby.Mode, seats.Select(s => s.Player).ToList(), white.Army, black.Army)
+        {
+            Rated = IsRated(lobby) && CountPairs(seats.Select(s => s.Player.Id!).ToList()),
+        };
         foreach (var seat in seats)
             _matches[seat.Player] = match;
 
@@ -441,10 +527,35 @@ public sealed class GameServer
                 end.wins = record.Wins;
             }
             player.Send(end);
+            RecordProgress(match, seat);
         }
         foreach (var player in match.Players)
             if (_matches.TryGetValue(player, out var current) && current == match)
                 _matches.Remove(player);
+    }
+
+    /// <summary>
+    /// Counts the finished online game in the player's quests, with the result the server saw,
+    /// and sends the new progress. A game of a few moves (dropped at once) does not count.
+    /// </summary>
+    private void RecordProgress(Match match, int seat)
+    {
+        var player = match.Players[seat];
+        if (player.Id == null || match.Played < match.Players.Count * 2)
+            return;
+        // The same person in two seats (a room with oneself) gets nothing.
+        if (match.Players.Count(p => p.Id == player.Id) > 1)
+            return;
+        var game = new ProgressAction
+        {
+            mode = match.Mode,
+            won = GameCheck.WonBy(match, seat),
+            captures = match.CapturesBy(seat),
+            promotions = match.PromotionsBy(seat),
+        };
+        _progress.RecordOnline(player.Id, game, DateTime.UtcNow);
+        var save = _progress.Sync(player.Id);
+        player.Send(new Message { type = "progress", data = ProgressBook.ToJson(save.Progress), seq = save.Seq });
     }
 
     private static void Error(IPlayer player, string text) =>

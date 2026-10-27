@@ -28,6 +28,8 @@ public partial class ChessBoardView
     private bool _showServer;
     private int _onlineMode;
     private string _playerId = "";
+    /// <summary>Made once with the id and never shown: the server lets only its owner use the id.</summary>
+    private string _playerSecret = "";
     private bool _wantInfo;
     private int? _myRating;
     private int _myGames;
@@ -80,7 +82,7 @@ public partial class ChessBoardView
     {
         if (_net == null)
             return;
-        _net.Send(new NetMessage { type = "hello", name = _playerName, id = _playerId });
+        _net.Send(new NetMessage { type = "hello", name = _playerName, id = _playerId, secret = _playerSecret });
         if (_pendingRequest != null)
         {
             _net.Send(_pendingRequest);

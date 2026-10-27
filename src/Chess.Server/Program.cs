@@ -17,7 +17,7 @@ IStore store = !string.IsNullOrWhiteSpace(database)
     ? new PostgresStore(database)
     : new FileStore(Environment.GetEnvironmentVariable("DATA_DIR") ?? AppContext.BaseDirectory);
 Console.WriteLine(store is PostgresStore ? "Saving to the database." : "Saving to files.");
-builder.Services.AddSingleton(new GameServer(null, new Ratings(store), new ProgressBook(store)));
+builder.Services.AddSingleton(new GameServer(null, new Ratings(store), new ProgressBook(store), new PlayerKeys(store)));
 var app = builder.Build();
 
 app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(20) });
