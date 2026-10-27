@@ -311,6 +311,7 @@ public partial class ChessBoardView
         const float rowHeight = 24;
         int rows = (log.Count + 1) / 2;
         var content = new Rect(0, 0, area.width - 16, rows * rowHeight);
+        _moveListScroll = Theme.DragScroll(area, _moveListScroll);
         _moveListScroll = GUI.BeginScrollView(area, _moveListScroll, content, false, false, GUIStyle.none, GUI.skin.verticalScrollbar);
         var number = Theme.Label(15, Theme.Muted);
         for (int i = 0; i < log.Count; i += 2)

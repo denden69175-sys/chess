@@ -241,7 +241,10 @@ public partial class ChessBoardView
         var content = new Rect(0, 0, width - 20, gridHeight);
         bool scroll = gridHeight > view.height;
         if (scroll)
+        {
+            _homeScroll = Theme.DragScroll(view, _homeScroll);
             _homeScroll = GUI.BeginScrollView(view, _homeScroll, content, false, false, GUIStyle.none, GUIStyle.none);
+        }
         else
             GUI.BeginGroup(view);
 

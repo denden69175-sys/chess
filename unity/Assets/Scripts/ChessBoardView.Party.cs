@@ -180,6 +180,7 @@ public partial class ChessBoardView
         string text = three ? ThreeRules : TeamRules;
         var view = new Rect(card.x + 20, card.y + 66, card.width - 40, card.height - 66 - 84);
         float textHeight = style.CalcHeight(new GUIContent(text), view.width - 24);
+        _partyRulesScroll = Theme.DragScroll(view, _partyRulesScroll);
         _partyRulesScroll = GUI.BeginScrollView(view, _partyRulesScroll, new Rect(0, 0, view.width - 24, textHeight));
         GUI.Label(new Rect(0, 0, view.width - 24, textHeight), text, style);
         GUI.EndScrollView();

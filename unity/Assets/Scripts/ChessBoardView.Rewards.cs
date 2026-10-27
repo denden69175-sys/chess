@@ -356,6 +356,7 @@ public partial class ChessBoardView
         var view = new Rect(x + 16, y + 76, cardWidth - 32, card.height - 92);
         float inner = view.width - 20;
         float contentHeight = _rewardTab == 0 ? QuestsHeight() : _rewardTab == 1 ? ChestsHeight(inner) : CollectionHeight(inner);
+        _rewardScroll = Theme.DragScroll(view, _rewardScroll);
         _rewardScroll = GUI.BeginScrollView(view, _rewardScroll, new Rect(0, 0, inner, contentHeight));
         if (_rewardTab == 0)
             DrawQuests(inner);

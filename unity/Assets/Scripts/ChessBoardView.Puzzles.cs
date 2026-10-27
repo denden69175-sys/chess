@@ -54,6 +54,8 @@ public partial class ChessBoardView
         foreach (int mate in new[] { 1, 2 })
             contentHeight += 40 + (PuzzleBook.All.Count(p => p.MateIn == mate) + columns - 1) / columns * 84 + 10;
 
+        _pzListScroll = Theme.DragScroll(view, _pzListScroll);
+
         _pzListScroll = GUI.BeginScrollView(view, _pzListScroll, new Rect(0, 0, inner, contentHeight));
         float cy = 0;
         foreach (int mate in new[] { 1, 2 })

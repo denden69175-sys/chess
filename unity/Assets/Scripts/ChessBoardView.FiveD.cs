@@ -32,6 +32,7 @@ public partial class ChessBoardView
     private Rect _mdCanvas;
     private Vector2 _mdPan;
     private float _mdZoom = 1;
+    private (float Distance, Vector2 Middle)? _mdPinch;
     private Vector2? _mdFocus;
     private bool _mdNeedFit;
     private Vector2? _mdPress;
@@ -407,6 +408,12 @@ public partial class ChessBoardView
     private void HandleFiveDInput()
     {
         var e = Event.current;
+        if (Input.touchCount >= 2)
+        {
+            PinchFiveD(e);
+            return;
+        }
+        _mdPinch = null;
         var mouse = e.mousePosition;
         var inside = new Rect(0, 0, _mdCanvas.width, _mdCanvas.height).Contains(mouse);
         switch (e.type)
@@ -439,6 +446,28 @@ public partial class ChessBoardView
                 e.Use();
                 break;
         }
+    }
+
+    /// <summary>Two fingers on a phone: spreading them zooms in, moving them together pans.</summary>
+    private void PinchFiveD(Event e)
+    {
+        // A pinch is never a tap on a board.
+        _mdPress = null;
+        if (e.isMouse)
+            e.Use();
+        if (e.type != EventType.Layout)
+            return;
+        var a = GUIUtility.ScreenToGUIPoint(new Vector2(Input.GetTouch(0).position.x, Screen.height - Input.GetTouch(0).position.y));
+        var b = GUIUtility.ScreenToGUIPoint(new Vector2(Input.GetTouch(1).position.x, Screen.height - Input.GetTouch(1).position.y));
+        float distance = (a - b).magnitude;
+        var middle = (a + b) / 2;
+        if (_mdPinch.HasValue && _mdPinch.Value.Distance > 1 && distance > 1)
+        {
+            _mdPan += middle - _mdPinch.Value.Middle;
+            ZoomAt(middle, distance / _mdPinch.Value.Distance);
+            _mdFocus = null;
+        }
+        _mdPinch = (distance, middle);
     }
 
     private void ClickFiveD(Vector2 point)
@@ -764,6 +793,7 @@ public partial class ChessBoardView
         style.richText = true;
         var view = new Rect(card.x + 20, card.y + 66, card.width - 40, card.height - 66 - 84);
         float textHeight = style.CalcHeight(new GUIContent(FiveDRules), view.width - 24);
+        _mdRulesScroll = Theme.DragScroll(view, _mdRulesScroll);
         _mdRulesScroll = GUI.BeginScrollView(view, _mdRulesScroll, new Rect(0, 0, view.width - 24, textHeight));
         GUI.Label(new Rect(0, 0, view.width - 24, textHeight), FiveDRules, style);
         GUI.EndScrollView();

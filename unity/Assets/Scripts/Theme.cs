@@ -45,6 +45,40 @@ public static class Theme
 
     public static void ClickTaken() => LastClickTime = Time.unscaledTime;
 
+    private static Rect? _dragView;
+    private static float _dragDistance;
+
+    /// <summary>
+    /// Lets a finger (or the mouse) drag the content of a scroll view, as on a phone, where the
+    /// thin scroll bars are hard to hit. Call it just before GUI.BeginScrollView. A drag longer
+    /// than a few pixels is not also a tap on the button it started on.
+    /// </summary>
+    public static Vector2 DragScroll(Rect view, Vector2 scroll)
+    {
+        var e = Event.current;
+        switch (e.type)
+        {
+            case EventType.MouseDown when e.button == 0 && view.Contains(e.mousePosition):
+                _dragView = view;
+                _dragDistance = 0;
+                break;
+            case EventType.MouseDrag when _dragView == view:
+                scroll -= e.delta;
+                _dragDistance += e.delta.magnitude;
+                e.Use();
+                break;
+            case EventType.MouseUp when _dragView == view:
+                _dragView = null;
+                if (_dragDistance > 10)
+                {
+                    GUIUtility.hotControl = 0;
+                    e.Use();
+                }
+                break;
+        }
+        return scroll;
+    }
+
     public static void Init()
     {
         if (_ready)
