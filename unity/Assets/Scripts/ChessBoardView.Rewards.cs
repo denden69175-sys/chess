@@ -79,7 +79,7 @@ public partial class ChessBoardView
     {
         [SkinCatalog.DefaultBoard] = new BoardStyle("#eed8b6", "#b28460", "#5c3c28"),
         ["tournament"] = new BoardStyle("#eeeed2", "#769656", "#3c4a2c"),
-        ["stone"] = new BoardStyle("#d6d6d6", "#8c8c8c", "#3e4046"),
+        ["stone"] = new BoardStyle("#dcdcdc", "#3e434b", "#8e9298"),
         ["sky"] = new BoardStyle("#e3f1ff", "#7aa7d6", "#2e4a6b"),
         ["marble"] = new BoardStyle("#f2efe9", "#b5aca0", "#6b6258"),
         ["forest"] = new BoardStyle("#dfe8c8", "#4f7a3a", "#2a3a1e"),
@@ -257,18 +257,84 @@ public partial class ChessBoardView
         var board = BoardStyles.TryGetValue(_progress.board, out var style) ? style : BoardStyles[SkinCatalog.DefaultBoard];
         LightSquare = board.Light;
         DarkSquare = board.Dark;
+        LoadBoardTiles(_progress.board);
         _checker = null;
         for (int i = 0; i < 64; i++)
         {
             if (_tiles[i] != null)
             {
                 var square = new Square(i);
-                _tiles[i].color = (square.File + square.Rank) % 2 == 0 ? DarkSquare : LightSquare;
+                var drawn = SquareTexture(square.File, square.Rank);
+                if (drawn != null)
+                {
+                    _tiles[i].sprite = TileSprite(drawn);
+                    _tiles[i].color = Color.white;
+                }
+                else
+                {
+                    _tiles[i].sprite = _squareSprite;
+                    _tiles[i].color = (square.File + square.Rank) % 2 == 0 ? DarkSquare : LightSquare;
+                }
             }
         }
         if (_frame != null)
             _frame.color = board.Frame;
         RedrawPieces();
+    }
+
+    private readonly List<Texture2D> _lightTiles = new List<Texture2D>();
+    private readonly List<Texture2D> _darkTiles = new List<Texture2D>();
+    private readonly Dictionary<Texture2D, Sprite> _tileSprites = new Dictionary<Texture2D, Sprite>();
+
+    /// <summary>
+    /// Loads a drawn board from Resources/Boards/&lt;board&gt;/ (light0.png, light1.png, ...,
+    /// dark0.png, ...: squares cut from the drawing). A board without them keeps its plain colours.
+    /// </summary>
+    private void LoadBoardTiles(string board)
+    {
+        _lightTiles.Clear();
+        _darkTiles.Clear();
+        foreach (var (name, list) in new[] { ("light", _lightTiles), ("dark", _darkTiles) })
+        {
+            for (int i = 0; ; i++)
+            {
+                var tile = Resources.Load<Texture2D>($"Boards/{board}/{name}{i}");
+                if (tile == null)
+                    break;
+                tile.filterMode = FilterMode.Bilinear;
+                tile.wrapMode = TextureWrapMode.Clamp;
+                list.Add(tile);
+            }
+        }
+        if (_lightTiles.Count == 0 || _darkTiles.Count == 0)
+        {
+            _lightTiles.Clear();
+            _darkTiles.Clear();
+        }
+    }
+
+    /// <summary>The drawn square for a cell, or null for a board of plain colours. Neighbouring cells get different drawings.</summary>
+    private Texture2D? SquareTexture(int file, int rank)
+    {
+        var list = (file + rank) % 2 == 0 ? _darkTiles : _lightTiles;
+        return list.Count == 0 ? null : list[(file * 5 + rank * 3) % list.Count];
+    }
+
+    /// <summary>Draws one board cell: the drawn square, or the plain colour.</summary>
+    private void DrawSquare(Rect rect, int file, int rank)
+    {
+        var drawn = SquareTexture(file, rank);
+        if (drawn != null)
+            GUI.DrawTexture(rect, drawn);
+        else
+            Theme.Fill(rect, (file + rank) % 2 == 0 ? DarkSquare : LightSquare);
+    }
+
+    private Sprite TileSprite(Texture2D texture)
+    {
+        if (!_tileSprites.TryGetValue(texture, out var sprite))
+            _tileSprites[texture] = sprite = Sprite.Create(texture, new Rect(0, 0, texture.width, texture.height), new Vector2(0.5f, 0.5f), texture.width);
+        return sprite;
     }
 
     /// <summary>The piece image <paramref name="key"/> ("wQ") in a colouring, made once and kept.</summary>

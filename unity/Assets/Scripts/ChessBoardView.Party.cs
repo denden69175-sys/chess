@@ -795,7 +795,7 @@ public partial class ChessBoardView
 
         Theme.Fill(new Rect(board.x - 8, board.y - 8, board.width + 16, board.height + 16), Theme.Panel, 12);
         for (int s = 0; s < ThreeGame.Squares; s++)
-            Theme.Fill(CellRect(s), (ThreeGame.FileOf(s) + ThreeGame.RankOf(s)) % 2 == 0 ? DarkSquare : LightSquare);
+            DrawSquare(CellRect(s), ThreeGame.FileOf(s), ThreeGame.RankOf(s));
         if (_three.LastMove.HasValue)
         {
             Theme.Fill(CellRect(_three.LastMove.Value.From), LastMoveTint);

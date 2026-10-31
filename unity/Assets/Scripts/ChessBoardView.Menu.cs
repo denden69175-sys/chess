@@ -445,7 +445,7 @@ public partial class ChessBoardView
             {
                 var square = new Square(file, rank);
                 var rect = new Rect(boardLeft + file * cell, cy + (1 - rank) * cell, cell, cell);
-                Theme.Fill(rect, (file + rank) % 2 == 0 ? DarkSquare : LightSquare);
+                DrawSquare(rect, file, rank);
                 bool hover = rect.Contains(Event.current.mousePosition);
                 if (hover)
                     Theme.Fill(rect, new Color(1, 1, 1, 0.25f));

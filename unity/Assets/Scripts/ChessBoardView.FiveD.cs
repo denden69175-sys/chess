@@ -654,10 +654,46 @@ public partial class ChessBoardView
         return who + ": ходите на досках с золотой рамкой";
     }
 
+    /// <summary>A texture's pixels at size × size, read through the GPU so the texture need not be readable.</summary>
+    private static Color[] ScaledPixels(Texture2D source, int size)
+    {
+        var target = RenderTexture.GetTemporary(size, size, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB);
+        Graphics.Blit(source, target);
+        var previous = RenderTexture.active;
+        RenderTexture.active = target;
+        var copy = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        copy.ReadPixels(new Rect(0, 0, size, size), 0, 0);
+        copy.Apply();
+        RenderTexture.active = previous;
+        RenderTexture.ReleaseTemporary(target);
+        var pixels = copy.GetPixels();
+        Object.Destroy(copy);
+        return pixels;
+    }
+
     private Texture2D Checker()
     {
         if (_checker != null)
             return _checker;
+        if (_lightTiles.Count > 0)
+        {
+            // A drawn board: the squares put together into one picture.
+            const int size = 96;
+            _checker = new Texture2D(size * 8, size * 8, TextureFormat.RGBA32, false) { filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp };
+            var cache = new Dictionary<Texture2D, Color[]>();
+            for (int file = 0; file < 8; file++)
+            {
+                for (int rank = 0; rank < 8; rank++)
+                {
+                    var tile = SquareTexture(file, rank)!;
+                    if (!cache.TryGetValue(tile, out var pixels))
+                        cache[tile] = pixels = ScaledPixels(tile, size);
+                    _checker.SetPixels(file * size, rank * size, size, size, pixels);
+                }
+            }
+            _checker.Apply();
+            return _checker;
+        }
         _checker = new Texture2D(8, 8, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp };
         for (int file = 0; file < 8; file++)
             for (int rank = 0; rank < 8; rank++)

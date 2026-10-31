@@ -508,7 +508,7 @@ public partial class ChessBoardView
             int file = Flipped ? 7 - square.File : square.File;
             int row = Flipped ? square.Rank : 7 - square.Rank;
             var cellRect = new Rect(rect.x + file * cell, rect.y + row * cell, cell, cell);
-            Theme.Fill(cellRect, (square.File + square.Rank) % 2 == 0 ? DarkSquare : LightSquare);
+            DrawSquare(cellRect, square.File, square.Rank);
             var piece = position[i];
             if (square == ghostSquare)
             {
