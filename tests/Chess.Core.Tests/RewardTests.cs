@@ -148,10 +148,10 @@ public class RewardTests
         Assert.False(Rewards.Buy(progress, ChestType.Rare));
         Assert.True(Rewards.Buy(progress, ChestType.Common));
         Assert.Equal(10, progress.coins);
-        Assert.False(Rewards.Equip(progress, "rainbow"));
-        progress.owned.Add("rainbow");
-        Assert.True(Rewards.Equip(progress, "rainbow"));
-        Assert.Equal("rainbow", progress.pieces);
+        Assert.False(Rewards.Equip(progress, "dragons"));
+        progress.owned.Add("dragons");
+        Assert.True(Rewards.Equip(progress, "dragons"));
+        Assert.Equal("dragons", progress.pieces);
         Assert.True(Rewards.Equip(progress, SkinCatalog.DefaultBoard));
     }
 }

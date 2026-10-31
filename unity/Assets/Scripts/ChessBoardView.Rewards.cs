@@ -69,7 +69,7 @@ public partial class ChessBoardView
         ["gold"] = new PieceStyle("#8a6a10", "#fff3a0", "#1f2228", "#c9ced8"),
         ["neon"] = new PieceStyle("#002a33", "#3ff8ff", "#2a0033", "#ff4ff0"),
         ["lava"] = new PieceStyle("#5a1500", "#ffd04f", "#120300", "#ff5a1f"),
-        ["rainbow"] = new PieceStyle("#000000", "#ffffff", "#000000", "#ffffff", PieceEffect.Rainbow),
+        ["dragons"] = new PieceStyle("#8a1f0a", "#ffc94a", "#0f1f0a", "#3fa040"),
         ["cosmos"] = new PieceStyle("#2a1a5a", "#d8c8ff", "#05020f", "#6a4ac8", PieceEffect.Stars),
         ["ghost"] = new PieceStyle("#6fa8c8", "#f0ffff", "#0f2a38", "#7fd0e8", PieceEffect.Ghost),
     };

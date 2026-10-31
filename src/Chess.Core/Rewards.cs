@@ -62,7 +62,7 @@ namespace Chess.Core
             new Skin("neon", "Неон", SkinKind.Pieces, Rarity.Epic),
             new Skin("lava", "Лава", SkinKind.Pieces, Rarity.Epic),
             new Skin("monkeys", "Обезьянки", SkinKind.Pieces, Rarity.Epic),
-            new Skin("rainbow", "Радуга", SkinKind.Pieces, Rarity.Legendary),
+            new Skin("dragons", "Драконы", SkinKind.Pieces, Rarity.Legendary),
             new Skin("cosmos", "Космос", SkinKind.Pieces, Rarity.Legendary),
             new Skin("ghost", "Призраки", SkinKind.Pieces, Rarity.Legendary),
 
