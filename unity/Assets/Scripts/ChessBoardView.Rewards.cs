@@ -66,10 +66,11 @@ public partial class ChessBoardView
         ["emerald"] = new PieceStyle("#1e7a4a", "#d9ffe9", "#032414", "#23a35e"),
         ["ruby"] = new PieceStyle("#a3263a", "#ffe0e6", "#2a0309", "#c72a44"),
         ["copper"] = new PieceStyle("#8a4a24", "#ffd9b8", "#2a1208", "#b8652f"),
-        ["gold"] = new PieceStyle("#8a6a10", "#fff3a0", "#1f2228", "#c9ced8"),
+        ["silver"] = new PieceStyle("#6a7280", "#f4f6fa", "#15181d", "#5a606a"),
+        ["gold"] = new PieceStyle("#8a6a10", "#fff3a0", "#2a1f05", "#a8820f"),
         ["neon"] = new PieceStyle("#002a33", "#3ff8ff", "#2a0033", "#ff4ff0"),
         ["lava"] = new PieceStyle("#5a1500", "#ffd04f", "#120300", "#ff5a1f"),
-        ["dragons"] = new PieceStyle("#8a1f0a", "#ffc94a", "#0f1f0a", "#3fa040"),
+        ["dragons"] = new PieceStyle("#5a7fb8", "#f0f6ff", "#140a0c", "#b0202a"),
         ["cosmos"] = new PieceStyle("#2a1a5a", "#d8c8ff", "#05020f", "#6a4ac8", PieceEffect.Stars),
         ["ghost"] = new PieceStyle("#6fa8c8", "#f0ffff", "#0f2a38", "#7fd0e8", PieceEffect.Ghost),
     };
