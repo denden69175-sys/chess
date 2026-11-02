@@ -282,19 +282,25 @@ public partial class ChessBoardView
         RedrawPieces();
     }
 
-    private readonly List<Texture2D> _lightTiles = new List<Texture2D>();
-    private readonly List<Texture2D> _darkTiles = new List<Texture2D>();
+    private List<Texture2D> _lightTiles = new List<Texture2D>();
+    private List<Texture2D> _darkTiles = new List<Texture2D>();
+    private readonly Dictionary<string, (List<Texture2D> Light, List<Texture2D> Dark)> _boardTiles = new Dictionary<string, (List<Texture2D>, List<Texture2D>)>();
     private readonly Dictionary<Texture2D, Sprite> _tileSprites = new Dictionary<Texture2D, Sprite>();
 
     /// <summary>
     /// Loads a drawn board from Resources/Boards/&lt;board&gt;/ (light0.png, light1.png, ...,
     /// dark0.png, ...: squares cut from the drawing). A board without them keeps its plain colours.
     /// </summary>
-    private void LoadBoardTiles(string board)
+    private void LoadBoardTiles(string board) => (_lightTiles, _darkTiles) = BoardTiles(board);
+
+    /// <summary>A board's drawn squares, loaded once; both lists are empty for a board of plain colours.</summary>
+    private (List<Texture2D> Light, List<Texture2D> Dark) BoardTiles(string board)
     {
-        _lightTiles.Clear();
-        _darkTiles.Clear();
-        foreach (var (name, list) in new[] { ("light", _lightTiles), ("dark", _darkTiles) })
+        if (_boardTiles.TryGetValue(board, out var tiles))
+            return tiles;
+        var light = new List<Texture2D>();
+        var dark = new List<Texture2D>();
+        foreach (var (name, list) in new[] { ("light", light), ("dark", dark) })
         {
             for (int i = 0; ; i++)
             {
@@ -306,11 +312,12 @@ public partial class ChessBoardView
                 list.Add(tile);
             }
         }
-        if (_lightTiles.Count == 0 || _darkTiles.Count == 0)
+        if (light.Count == 0 || dark.Count == 0)
         {
-            _lightTiles.Clear();
-            _darkTiles.Clear();
+            light.Clear();
+            dark.Clear();
         }
+        return _boardTiles[board] = (light, dark);
     }
 
     /// <summary>The drawn square for a cell, or null for a board of plain colours. Neighbouring cells get different drawings.</summary>
@@ -707,9 +714,20 @@ public partial class ChessBoardView
         Theme.Fill(rect, style.Frame * tint, 10);
         float inset = rect.width * 0.08f;
         float cell = (rect.width - 2 * inset) / 4;
+        var (light, dark) = BoardTiles(skin.Id);
         for (int file = 0; file < 4; file++)
+        {
             for (int rank = 0; rank < 4; rank++)
-                Theme.Fill(new Rect(rect.x + inset + file * cell, rect.y + inset + rank * cell, cell, cell), ((file + rank) % 2 == 0 ? style.Light : style.Dark) * tint);
+            {
+                var square = new Rect(rect.x + inset + file * cell, rect.y + inset + rank * cell, cell, cell);
+                bool isLight = (file + rank) % 2 == 0;
+                var drawn = isLight ? light : dark;
+                if (drawn.Count > 0)
+                    GUI.DrawTexture(square, drawn[(file * 5 + rank * 3) % drawn.Count]);
+                else
+                    Theme.Fill(square, (isLight ? style.Light : style.Dark) * tint);
+            }
+        }
         var knight = PieceTexture(PieceType.Knight, PieceColor.White);
         if (knight != null)
             GUI.DrawTexture(new Rect(rect.x + inset + cell, rect.y + inset + cell, cell * 2, cell * 2), knight);
