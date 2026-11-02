@@ -78,12 +78,12 @@ public partial class ChessBoardView
     private static readonly Dictionary<string, BoardStyle> BoardStyles = new Dictionary<string, BoardStyle>
     {
         [SkinCatalog.DefaultBoard] = new BoardStyle("#eed8b6", "#b28460", "#5c3c28"),
-        ["tournament"] = new BoardStyle("#eeeed2", "#769656", "#3c4a2c"),
+        ["tournament"] = new BoardStyle("#fbf2dc", "#4a6b36", "#2f4a28"),
         ["stone"] = new BoardStyle("#dcdcdc", "#3e434b", "#8e9298"),
-        ["sky"] = new BoardStyle("#e3f1ff", "#7aa7d6", "#2e4a6b"),
-        ["marble"] = new BoardStyle("#f2efe9", "#b5aca0", "#6b6258"),
-        ["forest"] = new BoardStyle("#dfe8c8", "#4f7a3a", "#2a3a1e"),
-        ["chocolate"] = new BoardStyle("#e8c9a0", "#6b3e26", "#3a1e10"),
+        ["sky"] = new BoardStyle("#e6f3ff", "#1e8ee8", "#eef5fb"),
+        ["marble"] = new BoardStyle("#f4f2ef", "#8c7d70", "#c9a43a"),
+        ["forest"] = new BoardStyle("#d2ec98", "#2f6a24", "#6b4424"),
+        ["chocolate"] = new BoardStyle("#e9a96a", "#5e2c12", "#4a2412"),
         ["night"] = new BoardStyle("#5a6a8a", "#1e2742", "#c9a440"),
         ["sakura"] = new BoardStyle("#ffe6ef", "#e88aa8", "#8a3a58"),
         ["desert"] = new BoardStyle("#f7e2b0", "#d39a52", "#7a4a1a"),
